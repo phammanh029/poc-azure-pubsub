@@ -1,0 +1,17 @@
+{
+  "name": "demo-proxy-azure-pubsub-local-api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "ts-node src/local-api.ts",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "typescript": "^5.6.3",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.9",
+    "@types/node": "^20.11.30"
+  }
+}

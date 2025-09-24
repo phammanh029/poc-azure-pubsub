@@ -1,0 +1,27 @@
+{
+  "name": "demo-proxy-azure-pubsub",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "proxy-server",
+    "proxy-client",
+    "local-api",
+    "packages/*"
+  ],
+  "scripts": {
+    "install:all": "yarn install",
+    "build": "yarn workspaces run build",
+    "start:server": "yarn workspace demo-proxy-azure-pubsub-proxy-server start",
+    "start:client": "yarn workspace demo-proxy-azure-pubsub-proxy-client start",
+    "start:local-api": "yarn workspace demo-proxy-azure-pubsub-local-api start",
+    "docker:build:server": "docker build -f demo-proxy-azure-pubsub/proxy-server/Dockerfile -t demo-proxy-azure-pubsub-proxy-server:local demo-proxy-azure-pubsub",
+    "docker:build:client": "docker build -f demo-proxy-azure-pubsub/proxy-client/Dockerfile -t demo-proxy-azure-pubsub-proxy-client:local demo-proxy-azure-pubsub",
+    "docker:build:local-api": "docker build -f demo-proxy-azure-pubsub/local-api/Dockerfile -t demo-proxy-azure-pubsub-local-api:local demo-proxy-azure-pubsub",
+    "docker:build": "yarn docker:build:server && yarn docker:build:client && yarn docker:build:local-api",
+    "k3d:create": "k3d cluster create demo --servers 1 --agents 1",
+    "k3d:import": "k3d image import demo-proxy-azure-pubsub-proxy-server:local demo-proxy-azure-pubsub-proxy-client:local demo-proxy-azure-pubsub-local-api:local -c demo",
+    "k8s:apply": "kubectl apply -f demo-proxy-azure-pubsub/k8s",
+    "k8s:delete": "kubectl delete -f demo-proxy-azure-pubsub/k8s || true",
+    "port-forward": "kubectl port-forward svc/proxy-server 8080:8080"
+  }
+}

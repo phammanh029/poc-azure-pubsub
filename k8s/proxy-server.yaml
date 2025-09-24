@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxy-server
+  labels:
+    app: proxy-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: proxy-server
+  template:
+    metadata:
+      labels:
+        app: proxy-server
+    spec:
+      containers:
+        - name: proxy-server
+          # Build and push your image with this project contents.
+          image: demo-proxy-azure-pubsub-proxy-server:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: PUBSUB_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: pubsub-secret
+                  key: connectionString
+          # If your image contains source + package.json, use npm start
+          # command: ["npm", "start"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxy-server
+  labels:
+    app: proxy-server
+spec:
+  type: ClusterIP
+  selector:
+    app: proxy-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

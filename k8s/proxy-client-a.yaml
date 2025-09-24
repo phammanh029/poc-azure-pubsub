@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxy-client-a
+  labels:
+    app: proxy-client-a
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: proxy-client-a
+  template:
+    metadata:
+      labels:
+        app: proxy-client-a
+    spec:
+      containers:
+        - name: proxy-client
+          image: demo-proxy-azure-pubsub-proxy-client:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CLIENT_ID
+              value: client-a
+            - name: LOCAL_API_URL
+              value: http://localhost:3000
+            - name: PUBSUB_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: pubsub-secret
+                  key: connectionString
+          # command: ["npm", "start"]
+        - name: local-api
+          image: demo-proxy-azure-pubsub-local-api:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CLIENT_ID
+              value: client-a
+          ports:
+            - containerPort: 3000
+          # command: ["npm", "start"]
