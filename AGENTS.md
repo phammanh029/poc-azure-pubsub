@@ -1,10 +1,9 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `proxy-server/`: Receives REST calls and relays via Azure Web PubSub.
-- `proxy-client/`: Subscribes by `CLIENT_ID`, forwards to `LOCAL_API_URL`, returns responses.
-- `local-api/`: Simple local HTTP API used by the client.
-- `packages/types/`: Shared TypeScript types.
+- `packages/proxy-server/`: Receives REST calls and relays via Azure Web PubSub.
+- `packages/proxy-client/`: Subscribes by `CLIENT_ID`, forwards to `LOCAL_API_URL`, returns responses.
+- `packages/local-api/`: Simple local HTTP API used by the client.
 - `k8s/`: Kubernetes manifests (deployments, service, secret).
 - Root uses Yarn workspaces; each package keeps sources in `src/` and compiles to `dist/`.
 
@@ -17,7 +16,7 @@
 - Port-forward proxy for testing: `yarn port-forward` (maps `8080:8080`).
 
 ## Coding Style & Naming Conventions
-- Language: TypeScript (ES2020, CommonJS, strict mode). Avoid `any`; use shared types from `packages/types`.
+- Language: TypeScript (ES2020, CommonJS, strict mode). Avoid `any`; prefer explicit interfaces.
 - Files: `.ts` in `src/`; filenames kebab-case (e.g., `proxy-server.ts`).
 - Indentation: 2 spaces; prefer async/await; keep modules small and focused.
 - Lint/format: No tool enforced yet. If adding one, prefer Prettier defaults and ESLint with TypeScript.

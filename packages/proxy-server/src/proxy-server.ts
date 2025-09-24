@@ -21,76 +21,104 @@ type Pending = {
 };
 const pending = new Map<string, Pending>();
 
-function tryParseJSON(payload: any) {
-  if (payload == null) return payload;
-  if (typeof payload === "object") return payload;
+/**
+ * Safely parse a potential JSON string.
+ */
+const parseJSON = (payload: unknown): unknown => {
+  if (payload == null || typeof payload === "object") return payload as any;
   if (typeof payload === "string") {
     try { return JSON.parse(payload); } catch { return payload; }
   }
   return payload;
-}
+};
 
-async function handleInvoke(req: Request): Promise<Response> {
+/**
+ * Build a JSON Response with provided status.
+ */
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+/**
+ * Extract required query params from a Request URL.
+ */
+const readInvokeParams = (req: Request) => {
   const url = new URL(req.url);
-  const clientId = url.searchParams.get("clientId") || undefined;
-  const path = url.searchParams.get("path") || undefined;
+  return {
+    clientId: url.searchParams.get("clientId") || undefined,
+    path: url.searchParams.get("path") || undefined,
+  } as const;
+};
 
+/**
+ * Register a promise awaiting a correlated response.
+ */
+const awaitResponse = (requestId: string, timeoutMs = 10_000) =>
+  new Promise<{ status: number; body: any }>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(requestId);
+      console.warn("[invoke] timeout waiting for response", { requestId });
+      reject(new Error("Gateway Timeout"));
+    }, timeoutMs);
+    pending.set(requestId, { resolve, reject, timer });
+  });
+
+/**
+ * Publish a message to the target group via Web PubSub.
+ */
+const publish = async (group: string, data: unknown) =>
+  wpsClient.group(group).sendToAll(JSON.stringify(data), { contentType: "application/json" });
+
+/**
+ * Handle POST /invoke
+ */
+const handleInvoke = async (req: Request): Promise<Response> => {
+  const { clientId, path } = readInvokeParams(req);
   console.log("[invoke] incoming", { clientId, path, method: req.method });
 
   if (!clientId || !path) {
-    return new Response(JSON.stringify({ error: "Missing required query params: clientId and path" }), { status: 400, headers: { "content-type": "application/json" } });
+    return json({ error: "Missing required query params: clientId and path" }, 400);
   }
 
-  let body: any = null;
-  try {
-    if (req.headers.get("content-type")?.includes("application/json")) {
-      body = await req.json().catch(() => null);
-    } else {
-      const text = await req.text();
-      body = text ? tryParseJSON(text) : null;
-    }
-  } catch { body = null; }
+  const contentType = req.headers.get("content-type") || "";
+  const raw = contentType.includes("application/json") ? await req.json().catch(() => null) : await req.text();
+  const body = contentType.includes("application/json") ? raw : raw ? parseJSON(raw) : null;
 
   const requestId = uuidv4();
   const message = { type: "request" as const, requestId, method: req.method, path, body };
   console.log("[invoke] prepared message", { requestId });
 
-  const responsePromise = new Promise<{ status: number; body: any }>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(requestId);
-      console.warn("[invoke] timeout waiting for response", { requestId });
-      reject(new Error("Gateway Timeout"));
-    }, 10_000);
-    pending.set(requestId, { resolve, reject, timer });
-  });
+  const responsePromise = awaitResponse(requestId);
 
   try {
     console.log("[invoke] sending to group", { group: clientId });
-    await wpsClient.group(clientId).sendToAll(JSON.stringify(message), { contentType: "application/json" });
+    await publish(clientId, message);
   } catch (err) {
     console.error("[invoke] failed to publish to Web PubSub", err);
     const p = pending.get(requestId);
     if (p) { clearTimeout(p.timer); pending.delete(requestId); }
-    return new Response(JSON.stringify({ error: "Failed to publish to PubSub" }), { status: 502, headers: { "content-type": "application/json" } });
+    return json({ error: "Failed to publish to PubSub" }, 502);
   }
 
   try {
     const response = await responsePromise;
     console.log("[invoke] got response", { requestId, status: response.status });
-    return new Response(JSON.stringify(response.body), { status: response.status, headers: { "content-type": "application/json" } });
+    return json(response.body, response.status);
   } catch {
     console.error("[invoke] responding with 504 due to timeout or error", { requestId });
-    return new Response(JSON.stringify({ error: "Gateway Timeout" }), { status: 504, headers: { "content-type": "application/json" } });
+    return json({ error: "Gateway Timeout" }, 504);
   }
-}
+};
 
-async function handleEvents(req: Request): Promise<Response> {
+/**
+ * Handle POST /events from Azure Web PubSub upstream.
+ */
+const handleEvents = async (req: Request): Promise<Response> => {
   const ceType = req.headers.get("ce-type");
   const contentType = req.headers.get("content-type");
   console.log("[events] received", { ceType, contentType });
 
-  let raw = await req.text();
-  const payload = tryParseJSON(raw);
+  const raw = await req.text();
+  const payload = parseJSON(raw) as any;
 
   if (ceType === "azure.webpubsub.user.message") {
     try {
@@ -115,25 +143,20 @@ async function handleEvents(req: Request): Promise<Response> {
   }
 
   return new Response(null, { status: 200 });
-}
+};
 
-function notFound(): Response {
-  return new Response(JSON.stringify({ error: "Not Found" }), { status: 404, headers: { "content-type": "application/json" } });
-}
+/**
+ * 404 JSON response.
+ */
+const notFound = (): Response => json({ error: "Not Found" }, 404);
 
 const server = Bun.serve({
   port: PORT,
   async fetch(req: Request) {
     const url = new URL(req.url);
-    if (req.method === "GET" && url.pathname === "/health") {
-      return new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "content-type": "application/json" } });
-    }
-    if (req.method === "POST" && url.pathname === "/invoke") {
-      return handleInvoke(req);
-    }
-    if (req.method === "POST" && url.pathname === "/events") {
-      return handleEvents(req);
-    }
+    if (req.method === "GET" && url.pathname === "/health") return json({ status: "ok" });
+    if (req.method === "POST" && url.pathname === "/invoke") return handleInvoke(req);
+    if (req.method === "POST" && url.pathname === "/events") return handleEvents(req);
     return notFound();
   },
 });

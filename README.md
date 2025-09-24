@@ -4,9 +4,9 @@ This monorepo demonstrates proxying API calls to remote clients via Azure Web Pu
 
 ## Structure
 
-- `proxy-server/`: Bun server exposing `POST /invoke?clientId=<id>&path=<path>`; publishes requests to Azure Web PubSub and awaits correlated responses (10s timeout) via upstream events.
-- `proxy-client/`: Connects to hub `proxyhub`, joins `CLIENT_ID`, forwards requests to `LOCAL_API_URL`, then replies with `{ type: "response", requestId, status, body }`.
-- `local-api/`: Simple Bun API (`GET /hello` → `{ msg: "Hello from <CLIENT_ID>" }`).
+- `packages/proxy-server/`: Bun server exposing `POST /invoke?clientId=<id>&path=<path>`; publishes requests to Azure Web PubSub and awaits correlated responses (10s timeout) via upstream events.
+- `packages/proxy-client/`: Connects to hub `proxyhub`, joins `CLIENT_ID`, forwards requests to `LOCAL_API_URL`, then replies with `{ type: "response", requestId, status, body }`.
+- `packages/local-api/`: Simple Bun API (`GET /hello` → `{ msg: "Hello from <CLIENT_ID>" }`).
 - `k8s/`: Manifests for secret and deployments/services.
 
 ## Prerequisites
@@ -73,13 +73,12 @@ You can still develop with Yarn workspaces locally. For fastest local runs with 
 corepack enable || true
 npm i -g bun@1.2.0 # if not installed
 
-cd demo-proxy-azure-pubsub
 bun install
 
 # In separate terminals
-cd proxy-server && bun run src/proxy-server.ts
-cd proxy-client && PUBSUB_CONNECTION_STRING=... CLIENT_ID=client-a LOCAL_API_URL=http://localhost:3000 bun run src/proxy-client.ts
-cd local-api && CLIENT_ID=client-a bun run src/local-api.ts
+cd packages/proxy-server && bun run src/proxy-server.ts
+cd packages/proxy-client && PUBSUB_CONNECTION_STRING=... CLIENT_ID=client-a LOCAL_API_URL=http://localhost:3000 bun run src/proxy-client.ts
+cd packages/local-api && CLIENT_ID=client-a bun run src/local-api.ts
 ```
 
 ## Port-forward and test

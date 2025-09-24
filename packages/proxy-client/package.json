@@ -1,5 +1,5 @@
 {
-  "name": "demo-proxy-azure-pubsub-proxy-client",
+  "name": "proxy-client",
   "version": "0.1.0",
   "private": true,
   "scripts": {

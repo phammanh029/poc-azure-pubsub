@@ -1,5 +1,5 @@
 {
-  "name": "demo-proxy-azure-pubsub-local-api",
+  "name": "local-api",
   "version": "0.1.0",
   "private": true,
   "scripts": {

@@ -25,29 +25,34 @@ type ResponseEnvelope = {
   body: any;
 };
 
-function joinUrl(base: string, path: string): string {
+/**
+ * Join two URL parts without duplicating or missing slashes.
+ */
+const joinUrl = (base: string, path: string): string => {
   if (!base.endsWith("/") && !path.startsWith("/")) return base + "/" + path;
   if (base.endsWith("/") && path.startsWith("/")) return base + path.slice(1);
   return base + path;
-}
+};
 
-async function getFetch(): Promise<typeof fetch> {
+/**
+ * Resolve a fetch implementation across Node/Bun environments.
+ */
+const getFetch = async (): Promise<typeof fetch> => {
   if (typeof (globalThis as any).fetch === "function") return (globalThis as any).fetch;
   const mod = await import("node-fetch");
   // @ts-ignore - default export for node-fetch
   return (mod.default || mod) as any;
-}
+};
 
-async function handleRequest(reqMsg: RequestEnvelope): Promise<ResponseEnvelope> {
+/**
+ * Forward a request to the local API and wrap the result in a response envelope.
+ */
+const forwardToLocal = async (reqMsg: RequestEnvelope): Promise<ResponseEnvelope> => {
   const url = joinUrl(LOCAL_API_URL, reqMsg.path);
   const method = (reqMsg.method || "GET").toUpperCase();
   const hasBody = reqMsg.body !== undefined && reqMsg.body !== null && method !== "GET" && method !== "HEAD";
-  const headers: Record<string, string> = {};
-  let body: any = undefined;
-  if (hasBody) {
-    body = JSON.stringify(reqMsg.body);
-    headers["content-type"] = "application/json";
-  }
+  const headers: Record<string, string> = hasBody ? { "content-type": "application/json" } : {};
+  const body = hasBody ? JSON.stringify(reqMsg.body) : undefined;
 
   console.log("[handle] forwarding to local API", { method, url });
   try {
@@ -67,9 +72,52 @@ async function handleRequest(reqMsg: RequestEnvelope): Promise<ResponseEnvelope>
     console.error("[handle] local API error", err);
     return { type: "response", requestId: reqMsg.requestId, status: 500, body: { error: String(err?.message || err || "Unknown error") } };
   }
-}
+};
 
-async function main() {
+/**
+ * Process an inbound Web PubSub message and, if it is a request, send a response.
+ */
+const onMessage = (ws: any) => async (event: any) => {
+  try {
+    const raw = typeof event.data === "string" ? event.data : String(event.data);
+    const msg = JSON.parse(raw);
+
+    if (msg?.type === "system" && msg?.event === "connected") {
+      console.log("[ws] connected", { connectionId: msg?.connectionId });
+      return;
+    }
+    if (msg?.type === "ack") {
+      console.log("[ws] ack", msg);
+      return;
+    }
+    if (msg?.type === "message") {
+      const dataType = msg?.dataType;
+      let payload = msg?.data;
+      if (dataType === "text" && typeof payload === "string") {
+        try { payload = JSON.parse(payload); } catch {}
+      }
+      if (payload && typeof payload === "object" && payload.type === "request") {
+        const reqMsg = payload as RequestEnvelope;
+        console.log("[ws] request received", { path: reqMsg.path, method: reqMsg.method, requestId: reqMsg.requestId });
+        const response = await forwardToLocal(reqMsg);
+        const outbound = { type: "sendToGroup", group: "server", dataType: "json", data: response } as const;
+        console.log("[ws] sending response", { requestId: response.requestId, status: response.status });
+        ws.send(JSON.stringify(outbound));
+        return;
+      }
+      console.log("[ws] non-request message ignored");
+      return;
+    }
+    console.log("[ws] other message", msg);
+  } catch (err) {
+    console.error("[ws] failed to process message", err);
+  }
+};
+
+/**
+ * Client bootstrap: acquires access URL, connects WS, and joins group.
+ */
+const main = async () => {
   console.log("[startup] proxy-client", { HUB_NAME, CLIENT_ID, LOCAL_API_URL });
 
   // Use service client to mint client access token URL
@@ -79,9 +127,7 @@ async function main() {
     userId: `client:${CLIENT_ID}`,
   });
   const { url } = token;
-  if (!url) {
-    throw new Error("Failed to acquire client access URL from Web PubSub");
-  }
+  if (!url) throw new Error("Failed to acquire client access URL from Web PubSub");
 
   // Use native WebSocket if available (Node 20+), else dynamic import 'ws'
   const WSImpl: any = (globalThis as any).WebSocket || (await import("ws")).default;
@@ -91,52 +137,9 @@ async function main() {
     console.log("[ws] open, joining group", { group: CLIENT_ID });
     ws.send(JSON.stringify({ type: "joinGroup", group: CLIENT_ID }));
   };
-
-  ws.onmessage = async (event: any) => {
-    try {
-      const raw = typeof event.data === "string" ? event.data : String(event.data);
-      const msg = JSON.parse(raw);
-
-      if (msg?.type === "system" && msg?.event === "connected") {
-        console.log("[ws] connected", { connectionId: msg?.connectionId });
-        return;
-      }
-      if (msg?.type === "ack") {
-        console.log("[ws] ack", msg);
-        return;
-      }
-      if (msg?.type === "message") {
-        const dataType = msg?.dataType;
-        let payload = msg?.data;
-        if (dataType === "text" && typeof payload === "string") {
-          try { payload = JSON.parse(payload); } catch {}
-        }
-        if (payload && typeof payload === "object" && payload.type === "request") {
-          const reqMsg = payload as RequestEnvelope;
-          console.log("[ws] request received", { path: reqMsg.path, method: reqMsg.method, requestId: reqMsg.requestId });
-          const response = await handleRequest(reqMsg);
-          const outbound = { type: "sendToGroup", group: "server", dataType: "json", data: response } as const;
-          console.log("[ws] sending response", { requestId: response.requestId, status: response.status });
-          ws.send(JSON.stringify(outbound));
-          return;
-        }
-        console.log("[ws] non-request message ignored");
-        return;
-      }
-      console.log("[ws] other message", msg);
-    } catch (err) {
-      console.error("[ws] failed to process message", err);
-    }
-  };
-
-  ws.onclose = (ev: any) => {
-    console.warn("[ws] closed", { code: ev?.code, reason: String(ev?.reason || "") });
-  };
-
-  ws.onerror = (err: any) => {
-    console.error("[ws] error", err);
-  };
-}
+  ws.onmessage = onMessage(ws);
+  ws.onclose = (ev: any) => console.warn("[ws] closed", { code: ev?.code, reason: String(ev?.reason || "") });
+  ws.onerror = (err: any) => console.error("[ws] error", err);
+};
 
 main().catch((err) => { console.error("[fatal]", err); process.exit(1); });
-
