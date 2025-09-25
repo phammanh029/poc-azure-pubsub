@@ -150,6 +150,7 @@ const start = async () => {
   wsClient.on('server-message', async (msg) => {
     // handle message
     const message = JSON.parse(msg.message.data.toString());
+    console.log(message);
     // if the requestType is request, then it will be proxy forward the request
   });
   await wsClient.start();

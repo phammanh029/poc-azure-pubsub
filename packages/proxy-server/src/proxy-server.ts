@@ -4,7 +4,6 @@ import {
 } from '@azure/web-pubsub';
 
 // Configuration
-const HUB_NAME = 'proxyhub';
 const PORT = Number(process.env.PORT || 8080);
 const CONNECTION_STRING = process.env.PUBSUB_CONNECTION_STRING || '';
 const AUTH_TOKEN = process.env.AUTH_TOKEN || ''; // reserved for future protection
@@ -16,7 +15,7 @@ const READY_STORE = (process.env.READY_STORE || 'memory').toLowerCase(); // 'mem
 const REDIS_URL = process.env.REDIS_URL || ''; // e.g., redis://valkey:6379
 const INSTANCE_ID = (globalThis as any).crypto?.randomUUID?.() || uuidv4();
 const RESPONSE_HUB = `response-${INSTANCE_ID}`;
-const SYSTEM_HUB = 'system';
+const SYSTEM_HUB = 'wawi';
 
 if (!CONNECTION_STRING) {
   console.error(
@@ -141,11 +140,11 @@ const handleInvoke = async (req: Request): Promise<Response> => {
   }
 
   // Block if client not ready
-  const store = await readyStorePromise;
-  const ready = await store.isReady(clientId);
-  if (!ready) {
-    return json({ error: 'Client not ready' }, 409);
-  }
+  // const store = await readyStorePromise;
+  // const ready = await store.isReady(clientId);
+  // if (!ready) {
+  //   return json({ error: 'Client not ready' }, 409);
+  // }
 
   const contentType = req.headers.get('content-type') || '';
   const raw = contentType.includes('application/json')
@@ -202,82 +201,21 @@ const handleInvoke = async (req: Request): Promise<Response> => {
  * Routes by hub: responses -> correlate pending; system -> init/diagnostics.
  */
 const handleEvents = async (req: Request): Promise<Response> => {
-  const ceType = req.headers.get('ce-type') || '';
-  const contentType = req.headers.get('content-type') || '';
-  const ceHub = req.headers.get('ce-hub') || '';
-  const ceSource = req.headers.get('ce-source') || '';
-  const hubFromSource = () => {
-    try {
-      const parts = ceSource.split('/hubs/');
-      if (parts.length > 1) return parts[1].split('/')[0];
-    } catch {}
-    return '';
-  };
-  const hub = ceHub || hubFromSource();
-  console.log('[events] received', { ceType, contentType, hub });
-
-  const raw = await req.text();
-  const payload = parseJSON(raw) as any;
-
-  if (ceType === 'azure.webpubsub.user.message' && hub === RESPONSE_HUB) {
-    try {
-      const data = payload;
-      if (
-        data &&
-        typeof data === 'object' &&
-        data.type === 'response' &&
-        typeof data.requestId === 'string'
-      ) {
-        const entry = pending.get(data.requestId);
-        const status =
-          typeof (data as any).status === 'number' ? (data as any).status : 200;
-        if (entry) {
-          clearTimeout(entry.timer);
-          pending.delete((data as any).requestId);
-          console.log('[events] resolved pending response', {
-            requestId: (data as any).requestId,
-            status,
-          });
-          entry.resolve({
-            status,
-            body: 'body' in (data as any) ? (data as any).body : null,
-          });
-        } else {
-          console.warn('[events] no pending for requestId', {
-            requestId: (data as any).requestId,
-          });
-        }
-      } else {
-        console.warn(
-          '[events] non-response payload or missing requestId on response hub'
-        );
-      }
-    } catch (err) {
-      console.error('[events] failed to process response payload', err);
-    }
-  } else if (ceType === 'azure.webpubsub.user.message' && hub === SYSTEM_HUB) {
-    try {
-      const data = payload;
-      if (
-        data &&
-        typeof data === 'object' &&
-        data.type === 'init' &&
-        typeof data.clientId === 'string'
-      ) {
-        const store = await readyStorePromise;
-        await store.setReady(data.clientId, true);
-        console.log('[events] client init received; marked ready', {
-          clientId: data.clientId,
-        });
-      } else {
-        console.log('[events] system hub message', data);
-      }
-    } catch (err) {
-      console.error('[events] failed to process system payload', err);
-    }
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': '*',
+        'Access-Control-Allow-Headers': '*',
+        'WebHook-Allowed-Origin': '*'
+      },
+    });
   }
-
-  return new Response(null, { status: 200 });
+  // log the body for debugging
+  const bodyText = await req.text();
+  console.log('[events] incoming', { bodyText });
+  return json({ ok: true });
 };
 
 /**
@@ -342,7 +280,8 @@ const handleAuth = async (req: Request): Promise<Response> => {
   try {
     const make = async (svc: WebPubSubServiceClient, hub: string) => {
       const t = await svc.getClientAccessToken({
-        // roles: ['webpubsub.joinLeaveGroup', 'webpubsub.sendToGroup'],
+        // join/leave hub but able to send to any group
+        roles: [`webpubsub.joinLeaveGroup.${SYSTEM_HUB}`, 'webpubsub.sendToGroup'],
         userId: `client:${clientId}`,
         expirationTimeInMinutes: 60,
       } as any);
@@ -373,7 +312,7 @@ const server = Bun.serve({
       return handleInit(req);
     if (req.method === 'POST' && url.pathname === '/invoke')
       return handleInvoke(req);
-    if (req.method === 'POST' && url.pathname === '/events')
+    if (url.pathname === '/events')
       return handleEvents(req);
     return notFound();
   },
@@ -382,5 +321,5 @@ const server = Bun.serve({
 console.log(`[startup] proxy-server listening on :${server.port}`);
 console.log(`[startup] instance: ${INSTANCE_ID}`);
 console.log(
-  `[startup] hubs: request=${HUB_NAME}, response=${RESPONSE_HUB}, system=${SYSTEM_HUB}`
+  `[startup] hubs: request=${SYSTEM_HUB}, response=${RESPONSE_HUB}`
 );
