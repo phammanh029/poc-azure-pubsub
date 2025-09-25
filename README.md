@@ -111,10 +111,17 @@ If no client response within 10 seconds, the server returns `504`.
 - Proxy Server
   - `PUBSUB_CONNECTION_STRING` (from `pubsub-secret`)
   - `PORT` (default `8080`)
+  - `AUTH_TOKEN` (optional; reserved for protecting `/auth` later)
+  - `ALLOWED_CLIENT_IDS` (optional; comma-separated allow-list for `/auth` and `/init`)
+  - `READY_STORE` (optional; `memory` or `redis` for readiness tracking)
+  - `REDIS_URL` (required when `READY_STORE=redis`, e.g. `redis://valkey:6379`)
 - Proxy Client
-  - `PUBSUB_CONNECTION_STRING` (from `pubsub-secret`)
+  - `PUBSUB_CONNECTION_STRING` (from `pubsub-secret`) or use server auth below
   - `CLIENT_ID` (e.g. `client-a`)
   - `LOCAL_API_URL` (e.g. `http://localhost:3000`)
+  - `AUTH_URL` (optional; when set, client fetches token from server `/auth`)
+  - `AUTH_API_KEY` (optional; API key sent as `x-api-key` to `/auth` if protection enabled)
+  - `INIT_URL` (optional; if omitted and `AUTH_URL` set, derives `.../init`)
 - Local API
   - `CLIENT_ID` (for greeting message)
 
@@ -123,3 +130,36 @@ If no client response within 10 seconds, the server returns `504`.
 - Configure your Azure Web PubSub resource to send upstream events to the proxy-server endpoint `/events`. This is required for responses to correlate back to the server. A simple approach is to expose the service or run the server outside the cluster for initial testing.
 - Images are local-only (`:local`) and imported into k3d; they are not pulled from a registry.
 - For additional clients, duplicate `k8s/proxy-client-a.yaml`, change the `name`/labels and set a different `CLIENT_ID`.
+
+### Auth and readiness
+
+- Clients only need `CLIENT_ID`. They obtain a signed PubSub URL by POSTing `{ clientId }` to the server at `/auth` (anonymous allowed for now). The response includes `endpoint`, `url`, `token`, and `expiresOn`.
+- After the PubSub connection is established, clients POST `{ clientId }` to `/init` to mark themselves ready.
+- The server rejects `/invoke` for a `clientId` that is not marked ready (returns `409`).
+- Readiness is stored in-memory by default; for multi-replica servers, set `READY_STORE=redis` and `REDIS_URL=redis://valkey:6379` (Valkey/Redis-compatible).
+
+## Docker Compose (Valkey + services)
+
+Run the full stack locally using Docker Compose with Valkey for readiness:
+
+```bash
+export PUBSUB_CONNECTION_STRING="<your-azure-web-pubsub-connection-string>"
+docker compose up --build
+```
+
+What it starts:
+- `valkey`: key-value store on `6379`.
+- `proxy-server`: listens on `8080` with `READY_STORE=redis`.
+- `local-api`: simple API for the client (port 3000, internal).
+- `proxy-client`: uses `/auth` and `/init` (no connection string needed), `CLIENT_ID=client-a`.
+
+Test after startup:
+
+```bash
+curl -sS -X POST \
+  "http://localhost:8080/invoke?clientId=client-a&path=/hello" \
+  -H 'content-type: application/json' \
+  -d '{}'
+```
+
+You should see `{ "msg": "Hello from client-a" }` once the client is ready.

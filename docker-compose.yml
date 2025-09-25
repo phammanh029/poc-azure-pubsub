@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  valkey:
+    image: valkey/valkey:latest
+    container_name: valkey
+    ports:
+      - "6379:6379"
+    command: ["valkey-server", "--appendonly", "yes"]
+
+  proxy-server:
+    build:
+      context: .
+      dockerfile: packages/proxy-server/Dockerfile
+    container_name: proxy-server
+    environment:
+      # Required: Azure Web PubSub connection string
+      - PUBSUB_CONNECTION_STRING=${PUBSUB_CONNECTION_STRING}
+      # Readiness via Valkey/Redis
+      - READY_STORE=redis
+      - REDIS_URL=redis://valkey:6379
+      - PORT=8080
+      # Optional future protection of /auth
+      - AUTH_TOKEN
+      - ALLOWED_CLIENT_IDS
+    ports:
+      - "8080:8080"
+    depends_on:
+      - valkey
+
+  local-api:
+    build:
+      context: .
+      dockerfile: packages/local-api/Dockerfile
+    container_name: local-api
+    environment:
+      - CLIENT_ID=client-a
+      - PORT=3000
+
+  proxy-client:
+    build:
+      context: .
+      dockerfile: packages/proxy-client/Dockerfile
+    container_name: proxy-client
+    environment:
+      - CLIENT_ID=client-a
+      - LOCAL_API_URL=http://local-api:3000
+      # Use server-issued token (no connection string needed)
+      - AUTH_URL=http://proxy-server:8080/auth
+      # INIT_URL is derived from AUTH_URL if not set
+      # - INIT_URL=http://proxy-server:8080/init
+    depends_on:
+      - proxy-server
+      - local-api
+
