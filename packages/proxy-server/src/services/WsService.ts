@@ -17,6 +17,9 @@ class ClientResponseSchema extends Schema.Struct({
   payload: Schema.Union(SuccessResponseSchema, ErrorResponseSchema),
 }) {}
 
+type ClientResponseData = Schema.Schema.Type<typeof ClientResponseSchema>;
+type ClientResponseDataPayload = ClientResponseData['payload'];
+
 export class WPSError extends TaggedError<WPSError>()('WPSError', {
   message: Schema.optional(Schema.String),
 }) {
@@ -36,7 +39,7 @@ const makeKey = (clientId: string, requestId: string) =>
   `${clientId}::${requestId}`;
 // in-memory pending request store
 type PendingResolver = {
-  resolve: (msg: any) => void;
+  resolve: (data: ClientResponseDataPayload) => void;
   reject: (err: any) => void;
   timeoutId: NodeJS.Timeout;
 };
@@ -131,7 +134,7 @@ export class WsService extends Effect.Service<WsService>()('WsService', {
         message: string | JSONTypes | Buffer,
         abortSignal?: AbortSignal
       ) =>
-        Effect.async<ClientResponseSchema, WPSError>((resume) => {
+        Effect.async<ClientResponseDataPayload, WPSError>((resume) => {
           const requestId = crypto.randomUUID();
           const key = makeKey(userId, requestId);
           // make sure the request will timeout after certain time
@@ -148,7 +151,7 @@ export class WsService extends Effect.Service<WsService>()('WsService', {
           }, requestTimeoutMs);
 
           const resolver = {
-            resolve: (data: ClientResponseSchema) =>
+            resolve: (data: ClientResponseDataPayload) =>
               resume(Effect.succeed(data)),
             reject: (err: WPSError) => resume(Effect.fail(err)),
             timeoutId,

@@ -6,7 +6,14 @@ export class EventProxyError extends TaggedError<EventProxyError>(
   'EventProxyError'
 )('EventProxyError', {
   message: Schema.String,
-}) {}
+}) {
+  static fromError(error: unknown) {
+    if (error instanceof EventProxyError) {
+      return error;
+    }
+    return new EventProxyError({ message: String(error) });
+  }
+}
 
 class EventProxyRequest extends Schema.Class<EventProxyRequest>(
   'EventProxyRequest'
@@ -26,13 +33,25 @@ export class EventProxyResponse extends Schema.Class<EventProxyResponse>(
   'EventProxyResponse'
 )({}) {}
 
+class EventProxySystemEvent extends Schema.Class<EventProxySystemEvent>(
+  'EventProxySystemEvent'
+)({
+  'ce-time': Schema.String,
+  'ce-connectionid': Schema.String,
+  'ce-eventname': Schema.Union(
+    Schema.Literal('connected'),
+    Schema.Literal('disconnected')
+  ),
+  'ce-userid': Schema.String,
+}) {}
+
 export class EventHttpApiGroup extends HttpApiGroup.make('events', {
   topLevel: true,
 })
   .add(
     HttpApiEndpoint.post('post', '/events')
       .addError(EventProxyError)
-      .setHeaders(EventProxyRequest)
+      .setHeaders(EventProxySystemEvent)
       .addSuccess(EventProxyResponse)
   )
   .add(
@@ -40,5 +59,5 @@ export class EventHttpApiGroup extends HttpApiGroup.make('events', {
       .addError(EventProxyError)
       // validate the headers
       .setHeaders(EventProxyRequest)
-      .addSuccess(EventProxyOptionResponse, { status: 204 })
+      .addSuccess(EventProxyOptionResponse, { status: 200 })
   ) {}
