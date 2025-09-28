@@ -4,15 +4,11 @@ WORKDIR /app
 
 # Copy monorepo manifests and workspaces
 COPY package.json ./
-COPY yarn.lock ./
-COPY packages ./packages
 
 # Install dependencies for all workspaces with Bun (supports workspaces)
 RUN bun install --silent
 
-WORKDIR /app/packages/proxy-server
-
 ENV NODE_ENV=production
-ENV PORT=8080
+ENV PORT=3000
 
-CMD ["bun", "run", "src/server.ts"]
+CMD ["bun", "run", "src/main.ts"]

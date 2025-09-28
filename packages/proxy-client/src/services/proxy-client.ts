@@ -1,7 +1,7 @@
-import { Effect } from 'effect';
-import { RequestProxyService } from './services/request-proxy-service';
-import { AuthService } from './services/auth-service';
 import { WebPubSubClient } from '@azure/web-pubsub-client';
+import { Effect } from 'effect';
+import { AuthService } from './auth-service';
+import { RequestProxyService } from './request-proxy-service';
 
 export class ProxyClient extends Effect.Service<ProxyClient>()('ProxyClient', {
   effect: Effect.gen(function* () {

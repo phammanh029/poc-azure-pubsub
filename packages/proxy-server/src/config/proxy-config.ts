@@ -1,4 +1,4 @@
-import { Config, ConfigError, Effect } from 'effect';
+import { Config, Effect } from 'effect';
 
 export interface ProxyServerConfig {
   port: number;
@@ -14,7 +14,6 @@ export class ProxyConfigService extends Effect.Service<ProxyServerConfig>()(
   {
     effect: Effect.gen(function* () {
       return {
-        port: yield* Config.number('PORT').pipe(Config.withDefault(8080)),
         podName: yield* Config.string('POD_NAME'),
         valkeyUrl: yield* Config.string('REDIS_URL'),
         hubName: yield* Config.string('HUB_NAME').pipe(

@@ -163,3 +163,79 @@ curl -sS -X POST \
 ```
 
 You should see `{ "msg": "Hello from client-a" }` once the client is ready.
+
+## POC – AWPS Tunnel Refactor (Multi-Pod Server + Single Proxy Client with Multiple Tenants)
+
+This repo also includes a local POC of the tunnel refactor using Bun runtime. It simulates the Azure Web PubSub flow via HTTP events so it runs locally without Azure while keeping the same message envelopes and correlation.
+
+- Server (`packages/proxy-server`)
+  - `POST /api/auth` → `{ hub: 'wawi', pod, eventsUrl }`.
+  - `POST /api/ws-events` handles `connected | disconnected | message` to maintain `db/connections.json` (tenant → connectionId) and correlate responses.
+  - `POST /api/request/:tenantId?path=/hello` forwards to the client mapped for that tenant and awaits the response (timeout 30s).
+  - Env: `PORT` (8080) and `POD_NAME` (e.g., `pod-1`).
+
+- Client (`packages/proxy-client`)
+  - One process supports multiple tenants via `TENANTS` env (comma-separated).
+  - Exposes `POST /client/receive` so the server can deliver requests. For each request, it forwards to Local API with header `x-tenant-id: <tenantId>` and then POSTs the response back to the server via `/api/ws-events` as `{ type: 'message', requestId, status, data }`.
+  - Env: `TENANTS`, `LOCAL_API_URL`, `SERVER_URL`, `PORT` (7070), optional `CLIENT_PUBLIC_URL`.
+
+- Local API (`packages/local-api`)
+  - `GET /hello` returns `{ msg: "hello from <tenantId>" }` using `x-tenant-id` header.
+
+- Shared DB
+  - `db/connections.json` is the shared mapping for tenant → connectionId.
+
+Local run (three terminals):
+
+1) Local API: `yarn start:local-api`
+
+2) Server: `PORT=8080 POD_NAME=pod-1 yarn start:server`
+
+3) Client: `TENANTS=tenant-1,tenant-2 LOCAL_API_URL=http://localhost:3000 SERVER_URL=http://localhost:8080 yarn start:client`
+
+Test:
+
+```
+curl -sS -X POST "http://localhost:8080/api/request/tenant-1?path=/hello" -H "content-type: application/json" -d '{}'
+```
+
+Expected: `{ "msg": "hello from tenant-1" }`.
+
+### Kubernetes Demo (k3d)
+
+1) Build images and create cluster
+
+```
+yarn docker:build
+yarn k3d:create
+yarn k3d:import
+```
+
+2) Apply storage + manifests
+
+```
+kubectl apply -f k8s/connections-pv-pvc.yaml
+kubectl apply -f k8s
+```
+
+Deployed:
+- 3 proxy-server pods (each exposes `/api/request/:tenantId`, `/api/ws-events`, `/api/auth`) and mounts a shared volume at `/app/db`.
+- 3 proxy-client pods (each handles multiple tenants; exposes `/client/receive`).
+- 1 local-api deployment + service.
+
+3) Port-forward to a server service
+
+```
+kubectl port-forward svc/proxy-server 8080:8080
+```
+
+4) Simulate ERP request (random server pod behind service)
+
+```
+curl -sS -X POST "http://localhost:8080/api/request/tenant-1?path=/hello" -H "content-type: application/json" -d '{}'
+```
+
+End-to-end flow:
+- Server picks pod name (respTarget=pod-N) and includes its pod-specific `serverEventsUrl` (built from `POD_IP`) in the payload.
+- Client forwards to Local API with `x-tenant-id: tenant-1` and posts `{ type:'message', requestId, status, data }` back to that `serverEventsUrl`.
+- The same pod correlates `requestId` and responds to the HTTP caller.

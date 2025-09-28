@@ -1,6 +1,6 @@
 import { Effect } from 'effect';
 import { AuthConfig } from './config/auth-config';
-import { ProxyClient } from './proxy-client';
+import { ProxyClient } from './services/proxy-client';
 import { AuthService } from './services/auth-service';
 
 const main = Effect.gen(function* () {

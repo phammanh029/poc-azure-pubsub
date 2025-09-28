@@ -1,5 +1,5 @@
 import { Effect, Schema } from 'effect';
-import { ProxyConfigService } from '../config';
+import { ProxyConfigService } from '../config/proxy-config';
 import { JSONTypes, WebPubSubServiceClient } from '@azure/web-pubsub';
 import { WebPubSubClient } from '@azure/web-pubsub-client';
 import { TaggedError } from 'effect/Schema';
@@ -27,9 +27,10 @@ export class WPSError extends TaggedError<WPSError>()('WPSError', {
 }
 
 const wsPromise = <T>(fn: Parameters<typeof Effect.tryPromise<T>>[0]) =>
-  Effect.tryPromise(fn).pipe(
-    Effect.mapError((err) => new WPSError({ message: (err as Error)?.message }))
-  );
+  Effect.tryPromise({
+    try: fn,
+    catch: (err) => WPSError.from(err),
+  }).pipe(Effect.catchAll(WPSError.from));
 
 const makeKey = (clientId: string, requestId: string) =>
   `${clientId}::${requestId}`;
@@ -43,63 +44,67 @@ const pendingRequests = new Map<string, PendingResolver>();
 
 export class WsService extends Effect.Service<WsService>()('WsService', {
   effect: Effect.gen(function* () {
+    yield* Effect.log('Initializing WsService');
     const { hubName, pubsubConnectionString, podName, requestTimeoutMs } =
       yield* ProxyConfigService;
     const wspClient = new WebPubSubServiceClient(
       pubsubConnectionString,
       hubName
     );
-    // get the access to the group
-    const groupAccessToken = yield* wsPromise(() =>
-      wspClient.getClientAccessToken({
-        groups: [podName],
-        roles: [
-          `webpubsub.joinLeaveGroup.${hubName}`,
-          // if we need to send message to client, need to add sendToGroup role
-        ],
-        userId: podName,
-        // will be expiring in 60 minutes
-        expirationTimeInMinutes: 60,
-      })
-    );
-    const groupClient = new WebPubSubClient(groupAccessToken.url, {
-      autoReconnect: true,
-    });
-    yield* wsPromise(() => groupClient.joinGroup(podName));
-
-    const resolveResponse = (data: unknown) =>
-      Effect.gen(function* () {
-        const { requestId, payload } = yield* Schema.decodeUnknown(
-          ClientResponseSchema
-        )(data);
-        const key = makeKey(podName, requestId);
-        const resolver = pendingRequests.get(key);
-        if (resolver) {
-          resolver.resolve(payload);
-          clearTimeout(resolver.timeoutId);
-          pendingRequests.delete(key);
-        } else {
-          console.warn('No pending resolver for', key);
-        }
-      });
-
-    groupClient.on('group-message', async (msg) => {
-      console.log('message from group', msg);
-      if (msg.message.kind !== 'groupData') return;
-      // handle both JSONTypes and ArrayBuffer
-      let data: any;
-      if (msg.message.data instanceof ArrayBuffer) {
-        data = JSON.parse(Buffer.from(msg.message.data).toString('utf8'));
-      } else {
-        data = msg.message.data;
-      }
-      await Effect.runPromise(resolveResponse(data));
-    });
-
-    yield* wsPromise(() => groupClient.start());
 
     return {
       hubName: hubName,
+      init: () =>
+        Effect.gen(function* () {
+          // get the access to the group
+          const groupAccessToken = yield* wsPromise(() =>
+            wspClient.getClientAccessToken({
+              groups: [podName],
+              roles: [
+                `webpubsub.joinLeaveGroup.${podName}`,
+                // if we need to send message to client, need to add sendToGroup role
+              ],
+              userId: podName,
+              // will be expiring in 60 minutes
+              expirationTimeInMinutes: 60,
+            })
+          );
+          const groupClient = new WebPubSubClient(groupAccessToken.url, {
+            autoReconnect: true,
+          });
+
+          const resolveResponse = (data: unknown) =>
+            Effect.gen(function* () {
+              const { requestId, payload } = yield* Schema.decodeUnknown(
+                ClientResponseSchema
+              )(data);
+              const key = makeKey(podName, requestId);
+              const resolver = pendingRequests.get(key);
+              if (resolver) {
+                resolver.resolve(payload);
+                clearTimeout(resolver.timeoutId);
+                pendingRequests.delete(key);
+              } else {
+                console.warn('No pending resolver for', key);
+              }
+            });
+
+          groupClient.on('group-message', async (msg) => {
+            console.log('message from group', msg);
+            if (msg.message.kind !== 'groupData') return;
+            // handle both JSONTypes and ArrayBuffer
+            let data: any;
+            if (msg.message.data instanceof ArrayBuffer) {
+              data = JSON.parse(Buffer.from(msg.message.data).toString('utf8'));
+            } else {
+              data = msg.message.data;
+            }
+            await Effect.runPromise(resolveResponse(data));
+          });
+
+          yield* wsPromise(() => groupClient.start());
+          yield* wsPromise(() => groupClient.joinGroup(podName));
+        }),
       auth: (clientId: string) =>
         Effect.gen(function* () {
           const token = yield* wsPromise(() =>

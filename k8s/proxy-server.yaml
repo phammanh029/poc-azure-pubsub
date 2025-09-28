@@ -5,7 +5,7 @@ metadata:
   labels:
     app: proxy-server
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: proxy-server
@@ -24,11 +24,32 @@ spec:
           env:
             - name: PORT
               value: "8080"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: CONNECTIONS_BACKEND
+              value: "file"
+            - name: CONNECTIONS_PATH
+              value: "/app/db/connections.json"
             - name: PUBSUB_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
                   name: pubsub-secret
                   key: connectionString
+            - name: HUB_NAME
+              value: "wawi"
+          volumeMounts:
+            - name: connections-store
+              mountPath: /app/db
+      volumes:
+        - name: connections-store
+          persistentVolumeClaim:
+            claimName: connections-pvc
           # If your image contains source + package.json, use npm start
           # command: ["npm", "start"]
 ---
