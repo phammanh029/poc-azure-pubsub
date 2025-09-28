@@ -1,32 +1,11 @@
-import { HttpApi, HttpApiBuilder, HttpMiddleware } from '@effect/platform';
+import { HttpApiBuilder, HttpMiddleware } from '@effect/platform';
 import { NodeHttpServer, NodeRuntime } from '@effect/platform-node';
-import { Layer, Effect } from 'effect';
+import { Layer } from 'effect';
 import { createServer } from 'http';
-import { EchoGroup, TenantInfo, TenantNotFound } from './echo';
+import { Api } from './api';
+import { EchoGroupLive } from './endpoints/echo-live';
 
-const api = HttpApi.make('api').add(EchoGroup);
-
-const EchoGroupLive = HttpApiBuilder.group(api, 'echo', (handlers) =>
-  handlers.handle('echo', (req) => {
-    const tenantId = req.request.headers['x-tenant-id'];
-    if (!tenantId) {
-      return Effect.fail(
-        new TenantNotFound({
-          tenantId: 'unknown',
-          message: 'x-tenant-id header is required',
-        })
-      );
-    }
-
-    return Effect.succeed(
-      new TenantInfo({
-        id: tenantId,
-        name: `Tenant ${tenantId}`,
-      })
-    );
-  })
-);
-const ApiLive = HttpApiBuilder.api(api).pipe(Layer.provide(EchoGroupLive));
+const ApiLive = HttpApiBuilder.api(Api).pipe(Layer.provide(EchoGroupLive));
 
 const HttpLive = HttpApiBuilder.serve(HttpMiddleware.logger).pipe(
   Layer.provide(ApiLive),
