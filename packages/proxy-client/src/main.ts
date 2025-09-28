@@ -1,7 +1,7 @@
-import { Effect, Layer } from 'effect';
+import { Effect } from 'effect';
+import { AuthConfig } from './config/auth-config';
 import { ProxyClient } from './proxy-client';
 import { AuthService } from './services/auth-service';
-import { AuthConfig } from './config/auth-config';
 
 const main = Effect.gen(function* () {
   const proxyClient = yield* ProxyClient;

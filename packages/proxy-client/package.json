@@ -7,7 +7,6 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@azure/web-pubsub": "^1.2.0",
     "@azure/web-pubsub-client": "^1.0.2",
     "effect": "^3.0.0",
     "node-fetch": "^3.3.2",

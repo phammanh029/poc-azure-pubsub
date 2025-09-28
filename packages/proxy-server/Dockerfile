@@ -15,4 +15,4 @@ WORKDIR /app/packages/proxy-server
 ENV NODE_ENV=production
 ENV PORT=8080
 
-CMD ["bun", "run", "src/proxy-server.ts"]
+CMD ["bun", "run", "src/server.ts"]
