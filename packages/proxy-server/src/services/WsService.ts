@@ -1,26 +1,35 @@
-import { Effect, Schema } from "effect";
-import { ProxyConfigService } from "../config/proxy-config";
-import { JSONTypes, WebPubSubServiceClient } from "@azure/web-pubsub";
-import { GroupDataMessage, WebPubSubClient } from "@azure/web-pubsub-client";
-import { TaggedError } from "effect/Schema";
+import { Effect, Schema } from 'effect';
+import { ProxyConfigService } from '../config/proxy-config';
+import { JSONTypes, WebPubSubServiceClient } from '@azure/web-pubsub';
+import { GroupDataMessage, WebPubSubClient } from '@azure/web-pubsub-client';
+import { TaggedError } from 'effect/Schema';
+import { DownstreamMessage } from '../data/protocol';
 
-class SuccessResponseSchema extends Schema.Struct({
+const SuccessResponseSchema = Schema.Struct({
   data: Schema.Any,
-}) {}
+});
 
-class ErrorResponseSchema extends Schema.Struct({
+const ErrorResponseSchema = Schema.Struct({
   error: Schema.String,
-}) {}
+});
 
-class ClientResponseSchema extends Schema.Struct({
+const ClientResponseSchema = Schema.Struct({
   requestId: Schema.String,
   payload: Schema.Union(SuccessResponseSchema, ErrorResponseSchema),
-}) {}
+});
 
 type ClientResponseData = Schema.Schema.Type<typeof ClientResponseSchema>;
-type ClientResponseDataPayload = ClientResponseData["payload"];
+type ClientResponseDataPayload = ClientResponseData['payload'];
 
-export class WPSError extends TaggedError<WPSError>()("WPSError", {
+const ClientProxyRequestSchema = Schema.Struct({
+  responseTo: Schema.String,
+  data: Schema.Any,
+});
+export type ClientProxyRequestSchema = Schema.Schema.Type<
+  typeof ClientProxyRequestSchema
+>;
+
+export class WPSError extends TaggedError<WPSError>()('WPSError', {
   message: Schema.optional(Schema.String),
 }) {
   static from(err: unknown) {
@@ -45,9 +54,14 @@ type PendingResolver = {
 };
 const pendingRequests = new Map<string, PendingResolver>();
 
-export class WsService extends Effect.Service<WsService>()("WsService", {
+export type wsResponseFunction = (
+  data: GroupDataMessage,
+  reply: (response: any) => Effect.Effect<void, never, never>
+) => Effect.Effect<void, never, never>;
+
+export class WsService extends Effect.Service<WsService>()('WsService', {
   effect: Effect.gen(function* () {
-    yield* Effect.log("Initializing WsService");
+    yield* Effect.log('Initializing WsService');
     const { hubName, pubsubConnectionString, podName, requestTimeoutMs } =
       yield* ProxyConfigService;
     const wspClient = new WebPubSubServiceClient(
@@ -58,7 +72,8 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
     const directCommunicate = (
       groupName: string,
       onClientResponse: (
-        data: GroupDataMessage
+        data: GroupDataMessage,
+        reply: wsResponseFunction
       ) => Effect.Effect<unknown, unknown>,
       connectionId?: string
     ) =>
@@ -80,20 +95,30 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
           autoReconnect: true,
         });
 
-        groupClient.on("group-message", (msg) =>
-          Effect.runPromise(onClientResponse(msg.message))
+        const reply = (message: any) =>
+          connectionId != null
+            ? wsPromise(() =>
+                wspClient.sendToConnection(connectionId, message)
+              ).pipe(
+                Effect.catchAll((err) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logError(
+                      `Failed to send message to connection ${connectionId}: ${err}`
+                    );
+                  })
+                )
+              )
+            : Effect.void;
+
+        groupClient.on('group-message', (msg) =>
+          Effect.runPromise(onClientResponse(msg.message, reply))
         );
 
         yield* wsPromise(() => groupClient.start());
         yield* wsPromise(() => groupClient.joinGroup(podName));
         return {
           stop: () => Effect.sync(() => groupClient.stop()),
-          send: (message: string | JSONTypes | Buffer) =>
-            connectionId != null
-              ? wsPromise(() =>
-                  wspClient.sendToConnection(connectionId, message)
-                )
-              : Effect.void,
+          send: reply,
         };
       });
 
@@ -113,11 +138,12 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
                 clearTimeout(resolver.timeoutId);
                 pendingRequests.delete(key);
               } else {
-                console.warn("No pending resolver for", key);
+                console.warn('No pending resolver for', key);
               }
             });
 
-          const onClientResponse = (data: GroupDataMessage) => resolveResponse(data.data);
+          const onClientResponse = (data: GroupDataMessage, reply: wsResponseFunction) =>
+            resolveResponse(data.data);
 
           yield* directCommunicate(podName, onClientResponse);
         }),
@@ -127,7 +153,7 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
             wspClient.getClientAccessToken({
               roles: [
                 `webpubsub.joinLeaveGroup.${hubName}`,
-                "webpubsub.sendToGroup",
+                'webpubsub.sendToGroup',
               ],
               userId: clientId,
               // will be expiring in 60 minutes
@@ -145,7 +171,7 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
       sendToClient: (
         connectionId: string,
         userId: string,
-        message: string | JSONTypes | Buffer,
+        message: ClientProxyRequestSchema,
         abortSignal?: AbortSignal
       ) =>
         Effect.async<ClientResponseDataPayload, WPSError>((resume) => {

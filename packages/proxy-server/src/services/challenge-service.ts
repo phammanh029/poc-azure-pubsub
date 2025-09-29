@@ -7,12 +7,11 @@
  *
  * The challenge-response mechanism ensures that only authorized clients can connect to the server.
  */
-import { Effect, Schema } from "effect";
-import { WsService } from "./WsService";
-import { GroupDataMessage } from "@azure/web-pubsub-client";
-import { ChallengeMessage, jtlProduct } from "../data/protocol";
-import { v7 } from "uuid";
-import { lowercaseUUID } from "../schema/uuid";
+import { Effect } from 'effect';
+import { wsResponseFunction, WsService } from './WsService';
+import { GroupDataMessage } from '@azure/web-pubsub-client';
+import { ChallengeMessage, generateUUID, jtlProduct } from '../data/protocol';
+import { lowercaseUUID } from '../schema/uuid';
 enum ChallengeSteps {
   INIT,
   SENT,
@@ -28,7 +27,7 @@ interface ConnectionInfo {
 }
 
 export class ChallengeService extends Effect.Service<ChallengeService>()(
-  "ChallengeService",
+  'ChallengeService',
   {
     effect: Effect.gen(function* () {
       const wsService = yield* WsService;
@@ -42,39 +41,43 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
         start: (tenantId: lowercaseUUID, connectionId: string) =>
           Effect.gen(function* () {
             // keep track of the connection
-            const connection: ConnectionInfo = { connectionId, tenantId, step: ChallengeSteps.INIT };
+            const connection: ConnectionInfo = {
+              connectionId,
+              tenantId,
+              step: ChallengeSteps.INIT,
+            };
             const challengeGroup = `challenge-${tenantId}`;
             // handle challenge response from client
-            const challengeResponseHandler = (
-              data: GroupDataMessage
-            ) =>
+            const challengeResponseHandler = (data: GroupDataMessage, reply: wsResponseFunction) =>
               Effect.gen(function* () {
                 // TODO: validate the userId
                 if (data.fromUserId !== connectionId) {
                 }
-                // parse the data response type
-                switch (connection.step) {
-                  case ChallengeSteps.INIT:
-                    const challengeRequest: ChallengeMessage = {
-                      op: 'challenge',
-                      id: v7() as lowercaseUUID,
-                      data: {
-                        date: new Date(),
-                        instanceId: connectionId,
-                        product: jtlProduct["erp-api"],
-                        tenantId: tenantId,
-                        productVersion: "1.0.0",
-                        properties: {}
-                      }
-                    }
-                    // send the challenge request to the client
-                    yield* wsService.sendToClient({}
-                }
+                // parse response
               });
 
-            yield* wsService.communicate(challengeGroup, )
-
-            return {};
+            const { send, stop } = yield* wsService.communicate(
+              challengeGroup,
+              challengeResponseHandler,
+              connectionId
+            );
+            const challengeRequest: ChallengeMessage = {
+              op: 'challenge',
+              id: generateUUID(),
+              data: {
+                date: new Date(),
+                instanceId: connectionId,
+                product: jtlProduct['erp-api'],
+                tenantId: tenantId,
+                productVersion: '1.0.0',
+                properties: {},
+              },
+            };
+            // send init data
+            yield* send({
+              responseTo: challengeGroup,
+              data: challengeRequest,
+            });
           }),
       };
     }),
