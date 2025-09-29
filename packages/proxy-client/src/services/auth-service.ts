@@ -1,6 +1,5 @@
 import { Effect, Either, Schema } from 'effect';
 import { AuthConfig } from '../config/auth-config';
-import { ParseError } from 'effect/ParseResult';
 
 // auth response data schema validation
 const AuthResponseSchema = Schema.Struct({
@@ -13,25 +12,24 @@ export class AuthService extends Effect.Service<AuthService>()('AuthService', {
     const authConfig = yield* AuthConfig;
     return {
       auth: () =>
-        Effect.tryPromise({
-          try: async () => {
-            console.log('Calling auth endpoint', authConfig.authUrl);
-            const response = await fetch(authConfig.authUrl, {
+        Effect.gen(function* () {
+          const responseData = yield* Effect.tryPromise(() =>
+            fetch(authConfig.authUrl, {
               method: 'GET',
               headers: {
                 'x-tenant-id': authConfig.tenantId,
                 accept: 'application/json',
               },
-            });
-            console.log('auth response', response);
-            if (!response.ok)
-              throw new Error(`Auth request failed: ${response.statusText}`);
-            return response.json();
-          },
-          catch: (error) => {
-            throw new Error(`Auth request failed: ${error}`);
-          },
-        }).pipe(Schema.decodeUnknownEither(AuthResponseSchema)),
+            }).then((res) => res.json())
+          );
+
+          const decoded =
+            Schema.decodeUnknownEither(AuthResponseSchema)(responseData);
+          if (Either.isLeft(decoded)) {
+            throw new Error('Invalid auth response');
+          }
+          return decoded.right;
+        }),
     };
   }),
 }) {}

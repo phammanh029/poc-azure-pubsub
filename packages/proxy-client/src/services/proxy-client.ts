@@ -7,10 +7,7 @@ export class ProxyClient extends Effect.Service<ProxyClient>()('ProxyClient', {
   effect: Effect.gen(function* () {
     const authService = yield* AuthService;
     // call the auth endpoint to get the token
-    const authResponse = yield* authService.auth();
-    if (Either.isLeft(authResponse)) {
-      
-    }
+    const { endpoint } = yield* authService.auth();
     // connect using the awps sdk to the hub with the token
     const hubClient = new WebPubSubClient(endpoint, {
       autoReconnect: true,
