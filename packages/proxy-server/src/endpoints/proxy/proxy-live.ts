@@ -20,11 +20,15 @@ export const ProxyLive = HttpApiBuilder.group(Api, 'proxy', (handlers) =>
             message: `No connection found for tenant: ${tenantId}`,
           });
 
+        yield* Effect.log(`Found connection ${connectionId} for tenant ${tenantId}`);
+
         // send the message to the connection
         const clientResponse = yield* wsService.sendToClient(
           connectionId,
           tenantId,
-          'test message'
+          {
+            headers: headers,
+          }
         );
         yield* Effect.log('Received response from client', clientResponse);
 
