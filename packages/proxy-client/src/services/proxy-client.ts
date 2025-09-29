@@ -1,5 +1,5 @@
 import { WebPubSubClient } from '@azure/web-pubsub-client';
-import { Effect, Either } from 'effect';
+import { Effect } from 'effect';
 import { AuthService } from './auth-service';
 import { RequestProxyService } from './request-proxy-service';
 

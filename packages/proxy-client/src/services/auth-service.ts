@@ -9,15 +9,15 @@ const AuthResponseSchema = Schema.Struct({
 
 export class AuthService extends Effect.Service<AuthService>()('AuthService', {
   effect: Effect.gen(function* () {
-    const authConfig = yield* AuthConfig;
+    const { authUrl, tenantId } = yield* AuthConfig;
     return {
       auth: () =>
         Effect.gen(function* () {
           const responseData = yield* Effect.tryPromise(() =>
-            fetch(authConfig.authUrl, {
+            fetch(authUrl, {
               method: 'GET',
               headers: {
-                'x-tenant-id': authConfig.tenantId,
+                'x-tenant-id': tenantId,
                 accept: 'application/json',
               },
             }).then((res) => res.json())
