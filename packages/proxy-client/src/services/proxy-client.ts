@@ -14,6 +14,8 @@ export class ProxyClient extends Effect.Service<ProxyClient>()("ProxyClient", {
       autoReconnect: true,
     });
 
+    // 
+
     hubClient.on("server-message", (msg) =>
       Effect.runPromise(
         proxyService.proxy(msg.message.data, hubClient.sendToGroup)
