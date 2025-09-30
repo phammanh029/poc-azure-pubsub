@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from '@effect/platform';
 import { Schema } from 'effect';
 import { TaggedError } from 'effect/Schema';
+import { lowercaseUUID } from '../../schema/uuid';
 
 export class EventProxyError extends TaggedError<EventProxyError>(
   'EventProxyError'
@@ -42,7 +43,7 @@ class EventProxySystemEvent extends Schema.Class<EventProxySystemEvent>(
     Schema.Literal('connected'),
     Schema.Literal('disconnected')
   ),
-  'ce-userid': Schema.String,
+  'ce-userid': lowercaseUUID,
 }) {}
 
 export class EventHttpApiGroup extends HttpApiGroup.make('events', {

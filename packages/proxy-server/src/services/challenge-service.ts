@@ -7,20 +7,18 @@
  *
  * The challenge-response mechanism ensures that only authorized clients can connect to the server.
  */
-import { Effect, Either, Schema } from 'effect';
-import {
-  GroupMessageReplyFn,
-  WsService,
-} from './WsService';
-import { GroupDataMessage } from '@azure/web-pubsub-client';
+import { Effect, Either, Schema } from "effect";
+import { GroupMessageReplyFn, WsService } from "./WsService";
+import { GroupDataMessage } from "@azure/web-pubsub-client";
 import {
   ChallengeMessage,
   ChallengeResponseMessage,
   ErrorMessage,
   generateUUID,
   jtlProduct,
-} from '../data/protocol';
-import { lowercaseUUID } from '../schema/uuid';
+} from "../data/protocol";
+import { lowercaseUUID } from "../schema/uuid";
+import { ConnectionService } from "./connection-service";
 enum ChallengeSteps {
   INIT,
   SENT,
@@ -40,11 +38,68 @@ const ChallengeResponseType = Schema.Union(
   ErrorMessage
 );
 
+type ChallengeSucceed = (
+  connectionInfo: ConnectionInfo
+) => Effect.Effect<void, never, never>;
+type ChallengeFailed = (connectionInfo: ConnectionInfo, reason?: string) => Effect.Effect<void, never, never>;
+
 export class ChallengeService extends Effect.Service<ChallengeService>()(
-  'ChallengeService',
+  "ChallengeService",
   {
     effect: Effect.gen(function* () {
       const wsService = yield* WsService;
+      const connectionService = yield* ConnectionService;
+      const onChallengeSucceed: ChallengeSucceed = (
+        connectionInfo: ConnectionInfo
+      ) =>
+        Effect.gen(function* () {
+          yield* Effect.log('Challenge succeeded for connection ' + connectionInfo.connectionId);
+          // add the connection to the storage
+          yield* connectionService.addConnection(
+            connectionInfo.tenantId,
+            connectionInfo.connectionId
+          );
+        }).pipe(
+          Effect.catchTag("UnknownException", (e) =>
+            Effect.gen(function* () {
+              yield* Effect.logError(
+                `Failed to add connection ${connectionInfo.connectionId} for tenant ${connectionInfo.tenantId}: ${e.message}`
+              );
+              // close the connection due to server error
+              yield* wsService
+                .closeConnection(
+                  connectionInfo.connectionId,
+                  "failed to add connection"
+                )
+                .pipe(
+                  Effect.catchTag("WPSError", (err) =>
+                    Effect.gen(function* () {
+                      yield* Effect.logError(
+                        `Failed to close connection ${connectionInfo.connectionId}: ${err.message}`
+                      );
+                    })
+                  )
+                );
+            })
+          )
+        );
+
+        const onFailed: ChallengeFailed = (connectionInfo: ConnectionInfo, reason?: string) => Effect.gen(function* () {
+          yield* Effect.log('Challenge failed: ' + reason);
+          // close the connection
+          yield* wsService.closeConnection(connectionInfo.connectionId, reason ?? 'challenge failed').pipe(
+            Effect.catchTag("WPSError", (err) =>
+              Effect.gen(function* () {
+                yield* Effect.logError(
+                  `Failed to close connection ${connectionInfo.connectionId}: ${err.message}`
+                );
+              })
+            )
+          );
+          // remove the connection from the storage if exists (ignore the error)
+          yield* connectionService.removeConnection(connectionInfo.connectionId).pipe(Effect.ignore);
+
+        });
       // In-memory store for challenges
       return {
         /**
@@ -52,7 +107,12 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
          * @param connection the connection info containing connectionId and tenantId
          * @returns
          */
-        start: (tenantId: lowercaseUUID, connectionId: string) =>
+        start: (
+          tenantId: lowercaseUUID,
+          connectionId: string,
+          onSucceed: ChallengeSucceed,
+          onFailed: ChallengeFailed
+        ) =>
           Effect.gen(function* () {
             // keep track of the connection
             const connection: ConnectionInfo = {
@@ -76,16 +136,14 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
                 )(data);
                 if (Either.isLeft(challengeResponse)) {
                   connection.step = ChallengeSteps.FAILED;
-                  // close the connection
-                  yield* wsService.closeConnection(connectionId);
+                  yield* onFailed(connection, "invalid challenge response format");
                   return;
                 }
 
                 const message = challengeResponse.right;
-                if (message.op === 'error') {
+                if (message.op === "error") {
                   connection.step = ChallengeSteps.FAILED;
-                  // close the connection
-                  yield* wsService.closeConnection(connectionId);
+                  yield* onFailed(connection, `challenge response error: ${message.data}`);
                   return;
                 }
 
@@ -94,27 +152,28 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
                 yield* reply({
                   replyTo: challengeGroup,
                   data: {
-                    op: 'challenge-response',
+                    op: "challenge-response",
                     id: message.id,
                     data: {},
                   },
                 });
+                yield* onSucceed(connection);
               });
 
-            const { send, stop } = yield* wsService.communicate(
+            const { send, stop } = yield* wsService.chat(
               challengeGroup,
               challengeResponseHandler,
               connectionId
             );
             const challengeRequest: ChallengeMessage = {
-              op: 'challenge',
+              op: "challenge",
               id: generateUUID(),
               data: {
                 date: new Date(),
                 instanceId: connectionId,
-                product: jtlProduct['erp-api'],
+                product: jtlProduct["erp-api"],
                 tenantId: tenantId,
-                productVersion: '1.0.0',
+                productVersion: "1.0.0",
                 properties: {},
               },
             };
@@ -126,6 +185,6 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
           }),
       };
     }),
-    dependencies: [WsService.Default],
+    dependencies: [WsService.Default, ConnectionService.Default],
   }
 ) {}
