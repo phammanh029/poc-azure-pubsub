@@ -18,7 +18,6 @@ import {
   jtlProduct,
 } from "../data/protocol";
 import { lowercaseUUID } from "../schema/uuid";
-import { ConnectionService } from "./connection-service";
 enum ChallengeSteps {
   INIT,
   SENT,
@@ -48,58 +47,6 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
   {
     effect: Effect.gen(function* () {
       const wsService = yield* WsService;
-      const connectionService = yield* ConnectionService;
-      const onChallengeSucceed: ChallengeSucceed = (
-        connectionInfo: ConnectionInfo
-      ) =>
-        Effect.gen(function* () {
-          yield* Effect.log('Challenge succeeded for connection ' + connectionInfo.connectionId);
-          // add the connection to the storage
-          yield* connectionService.addConnection(
-            connectionInfo.tenantId,
-            connectionInfo.connectionId
-          );
-        }).pipe(
-          Effect.catchTag("UnknownException", (e) =>
-            Effect.gen(function* () {
-              yield* Effect.logError(
-                `Failed to add connection ${connectionInfo.connectionId} for tenant ${connectionInfo.tenantId}: ${e.message}`
-              );
-              // close the connection due to server error
-              yield* wsService
-                .closeConnection(
-                  connectionInfo.connectionId,
-                  "failed to add connection"
-                )
-                .pipe(
-                  Effect.catchTag("WPSError", (err) =>
-                    Effect.gen(function* () {
-                      yield* Effect.logError(
-                        `Failed to close connection ${connectionInfo.connectionId}: ${err.message}`
-                      );
-                    })
-                  )
-                );
-            })
-          )
-        );
-
-        const onFailed: ChallengeFailed = (connectionInfo: ConnectionInfo, reason?: string) => Effect.gen(function* () {
-          yield* Effect.log('Challenge failed: ' + reason);
-          // close the connection
-          yield* wsService.closeConnection(connectionInfo.connectionId, reason ?? 'challenge failed').pipe(
-            Effect.catchTag("WPSError", (err) =>
-              Effect.gen(function* () {
-                yield* Effect.logError(
-                  `Failed to close connection ${connectionInfo.connectionId}: ${err.message}`
-                );
-              })
-            )
-          );
-          // remove the connection from the storage if exists (ignore the error)
-          yield* connectionService.removeConnection(connectionInfo.connectionId).pipe(Effect.ignore);
-
-        });
       // In-memory store for challenges
       return {
         /**
@@ -185,6 +132,6 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
           }),
       };
     }),
-    dependencies: [WsService.Default, ConnectionService.Default],
+    dependencies: [WsService.Default],
   }
 ) {}

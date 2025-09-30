@@ -1,5 +1,5 @@
-import { HttpApiEndpoint, HttpApiGroup } from '@effect/platform';
-import { Schema } from 'effect';
+import { HttpApiEndpoint, HttpApiGroup, HttpMiddleware } from '@effect/platform';
+import { Effect, Schema } from 'effect';
 import { TaggedError } from 'effect/Schema';
 import { lowercaseUUID } from '../../schema/uuid';
 

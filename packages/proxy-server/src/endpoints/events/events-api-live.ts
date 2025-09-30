@@ -1,10 +1,10 @@
 import { HttpApiBuilder } from "@effect/platform";
 import { Effect, Layer } from "effect";
 import { Api } from "../../api";
-import { ConnectionService } from "../../services/connection-service";
-import { EventProxyError } from "./events-api";
 import { ProxyConfigService } from "../../config/proxy-config";
 import { ChallengeService } from "../../services/challenge-service";
+import { ConnectionService } from "../../services/connection-service";
+import { EventProxyError } from "./events-api";
 
 export const EventsLive = HttpApiBuilder.group(Api, "events", (handlers) =>
   Effect.gen(function* () {
