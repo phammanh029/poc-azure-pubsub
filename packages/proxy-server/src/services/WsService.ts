@@ -22,7 +22,7 @@ type ClientResponseData = Schema.Schema.Type<typeof ClientResponseSchema>;
 type ClientResponseDataPayload = ClientResponseData['payload'];
 
 const ClientProxyRequestSchema = Schema.Struct({
-  responseTo: Schema.String,
+  replyTo: Schema.String,
   data: Schema.Any,
 });
 export type ClientProxyRequestSchema = Schema.Schema.Type<
@@ -45,7 +45,7 @@ const wsPromise = <T>(fn: Parameters<typeof Effect.tryPromise<T>>[0]) =>
   }).pipe(Effect.catchAll(WPSError.from));
 
 const makeKey = (clientId: string, requestId: string) =>
-  `${clientId}::${requestId}`;
+  `${clientId}:${requestId}`;
 // in-memory pending request store
 type PendingResolver = {
   resolve: (data: ClientResponseDataPayload) => void;
@@ -54,9 +54,16 @@ type PendingResolver = {
 };
 const pendingRequests = new Map<string, PendingResolver>();
 
+export type GroupMessageReplyFn = (
+  response: {
+    replyTo: string;
+    data: any
+  }
+) => Effect.Effect<void, never, never>;
+
 export type wsResponseFunction = (
   data: GroupDataMessage,
-  reply: (response: any) => Effect.Effect<void, never, never>
+  reply: GroupMessageReplyFn
 ) => Effect.Effect<void, never, never>;
 
 export class WsService extends Effect.Service<WsService>()('WsService', {
@@ -73,7 +80,7 @@ export class WsService extends Effect.Service<WsService>()('WsService', {
       groupName: string,
       onClientResponse: (
         data: GroupDataMessage,
-        reply: wsResponseFunction
+        reply: GroupMessageReplyFn
       ) => Effect.Effect<unknown, unknown>,
       connectionId?: string
     ) =>
@@ -124,6 +131,8 @@ export class WsService extends Effect.Service<WsService>()('WsService', {
 
     return {
       hubName: hubName,
+      closeConnection: (connectionId: string) =>
+        wsPromise(() => wspClient.closeConnection(connectionId)),
       init: () =>
         Effect.gen(function* () {
           const resolveResponse = (data: unknown) =>
@@ -142,8 +151,10 @@ export class WsService extends Effect.Service<WsService>()('WsService', {
               }
             });
 
-          const onClientResponse = (data: GroupDataMessage, reply: wsResponseFunction) =>
-            resolveResponse(data.data);
+          const onClientResponse = (
+            data: GroupDataMessage,
+            reply: GroupMessageReplyFn
+          ) => resolveResponse(data.data);
 
           yield* directCommunicate(podName, onClientResponse);
         }),

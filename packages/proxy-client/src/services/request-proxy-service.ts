@@ -1,23 +1,19 @@
-import { Effect, Schema } from "effect";
-import type { WebPubSubClient } from "@azure/web-pubsub-client";
-import { isLeft } from "effect/Either";
+import { Effect, Schema } from 'effect';
+import type { WebPubSubClient } from '@azure/web-pubsub-client';
+import { isLeft } from 'effect/Either';
 
-export class ProxyRequestSchema extends Schema.Class<ProxyRequestSchema>(
-  "ProxyRequestSchema"
-)({
+const ProxyRequestSchema = Schema.Struct({
   method: Schema.Union(
-    Schema.Literal("GET"),
-    Schema.Literal("POST"),
-    Schema.Literal("PUT"),
-    Schema.Literal("DELETE")
+    Schema.Literal('GET'),
+    Schema.Literal('POST'),
+    Schema.Literal('PUT'),
+    Schema.Literal('DELETE')
   ),
   path: Schema.String,
   headers: Schema.Record({
     key: Schema.String,
     value: Schema.String,
   }),
-  // where should the client send the response back to
-  responseGroup: Schema.String,
   query: Schema.optional(Schema.String),
   body: Schema.optional(
     Schema.Record({
@@ -25,25 +21,40 @@ export class ProxyRequestSchema extends Schema.Class<ProxyRequestSchema>(
       value: Schema.String,
     })
   ),
-}) {}
+});
+
+const ProxyRequestMetaSchema = Schema.Struct({
+  replyTo: Schema.String,
+  data: Schema.Any,
+});
 
 /**
  * This contains the proxy function where it will call the rest api from external endpoints and then send it back to the azure web pubsub group
  */
 export class RequestProxyService extends Effect.Service<RequestProxyService>()(
-  "RequestProxyService",
+  'RequestProxyService',
   {
     effect: Effect.gen(function* () {
       // TODO: load the config the server and then proxy the request
       return {
         proxy: (
           input: unknown,
-          messageSender: WebPubSubClient["sendToGroup"]
+          messageSender: WebPubSubClient['sendToGroup']
         ) =>
           Effect.gen(function* () {
+            const messageInfo = Schema.decodeUnknownEither(ProxyRequestMetaSchema)(input);
+            if (isLeft(messageInfo)) {
+              yield* Effect.logWarning(
+                `Invalid proxy message received: ${JSON.stringify(
+                  input
+                )}, error: ${JSON.stringify(messageInfo.left)}`
+              );
+              return;
+            }
+            const groupMessage = messageInfo.right;
             // decode and validate the request
             const decoded =
-              Schema.decodeUnknownEither(ProxyRequestSchema)(input);
+              Schema.decodeUnknownEither(ProxyRequestSchema)(groupMessage.data);
             if (isLeft(decoded)) {
               yield* Effect.logWarning(
                 `Invalid proxy request received: ${JSON.stringify(
@@ -51,11 +62,17 @@ export class RequestProxyService extends Effect.Service<RequestProxyService>()(
                 )}, error: ${JSON.stringify(decoded.left)}`
               );
               // TODO: send back the error response
-              messageSender(req.responseGroup,  {
-                status: 400,
-                body: { message: "Invalid request" },
-                headers: { "content-type": "application/json" },
-              })
+              messageSender(
+                groupMessage.replyTo,
+                {
+                  status: 400,
+                  body: { message: 'Invalid request' },
+                  headers: { 'content-type': 'application/json' },
+                },
+                'json', {
+                  fireAndForget: true,
+                }
+              );
               return;
             }
             // handle the request
@@ -63,11 +80,11 @@ export class RequestProxyService extends Effect.Service<RequestProxyService>()(
             // call to the local api (mock for now)
             const response = {
               status: 200,
-              body: { message: "Hello from local API" },
-              headers: { "content-type": "application/json" },
+              body: { message: 'Hello from local API' },
+              headers: { 'content-type': 'application/json' },
             };
             yield* Effect.promise(() =>
-              messageSender(req.responseGroup, response, "json", {
+              messageSender(groupMessage.replyTo, response, 'json', {
                 fireAndForget: true,
               })
             );

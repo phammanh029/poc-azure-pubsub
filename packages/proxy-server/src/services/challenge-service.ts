@@ -7,10 +7,19 @@
  *
  * The challenge-response mechanism ensures that only authorized clients can connect to the server.
  */
-import { Effect } from 'effect';
-import { wsResponseFunction, WsService } from './WsService';
+import { Effect, Either, Schema } from 'effect';
+import {
+  GroupMessageReplyFn,
+  WsService,
+} from './WsService';
 import { GroupDataMessage } from '@azure/web-pubsub-client';
-import { ChallengeMessage, generateUUID, jtlProduct } from '../data/protocol';
+import {
+  ChallengeMessage,
+  ChallengeResponseMessage,
+  ErrorMessage,
+  generateUUID,
+  jtlProduct,
+} from '../data/protocol';
 import { lowercaseUUID } from '../schema/uuid';
 enum ChallengeSteps {
   INIT,
@@ -25,6 +34,11 @@ interface ConnectionInfo {
   tenantId: string;
   step: ChallengeSteps;
 }
+
+const ChallengeResponseType = Schema.Union(
+  ChallengeResponseMessage,
+  ErrorMessage
+);
 
 export class ChallengeService extends Effect.Service<ChallengeService>()(
   'ChallengeService',
@@ -48,12 +62,43 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
             };
             const challengeGroup = `challenge-${tenantId}`;
             // handle challenge response from client
-            const challengeResponseHandler = (data: GroupDataMessage, reply: wsResponseFunction) =>
+            const challengeResponseHandler = (
+              data: GroupDataMessage,
+              reply: GroupMessageReplyFn
+            ) =>
               Effect.gen(function* () {
                 // TODO: validate the userId
                 if (data.fromUserId !== connectionId) {
                 }
                 // parse response
+                const challengeResponse = Schema.decodeUnknownEither(
+                  ChallengeResponseType
+                )(data);
+                if (Either.isLeft(challengeResponse)) {
+                  connection.step = ChallengeSteps.FAILED;
+                  // close the connection
+                  yield* wsService.closeConnection(connectionId);
+                  return;
+                }
+
+                const message = challengeResponse.right;
+                if (message.op === 'error') {
+                  connection.step = ChallengeSteps.FAILED;
+                  // close the connection
+                  yield* wsService.closeConnection(connectionId);
+                  return;
+                }
+
+                // TODO: handle the challenge response
+                connection.step = ChallengeSteps.VERIFIED;
+                yield* reply({
+                  replyTo: challengeGroup,
+                  data: {
+                    op: 'challenge-response',
+                    id: message.id,
+                    data: {},
+                  },
+                });
               });
 
             const { send, stop } = yield* wsService.communicate(
@@ -75,7 +120,7 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
             };
             // send init data
             yield* send({
-              responseTo: challengeGroup,
+              replyTo: challengeGroup,
               data: challengeRequest,
             });
           }),
