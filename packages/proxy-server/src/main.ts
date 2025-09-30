@@ -3,9 +3,9 @@ import { Effect, Layer } from 'effect';
 import { NodeHttpServer, NodeRuntime } from '@effect/platform-node';
 import { createServer } from 'http';
 import { AuthApiLive } from './endpoints/auth/auth-api-live';
-import { EventsLive } from './endpoints/events/events-live';
+import { EventsLive } from './endpoints/events/events-api-live';
 import { Api } from './api';
-import { ProxyLive } from './endpoints/proxy/proxy-live';
+import { ProxyLive } from './endpoints/proxy/proxy-api-live';
 import { MainConfig } from './config/main-config';
 import { WsService } from './services/WsService';
 

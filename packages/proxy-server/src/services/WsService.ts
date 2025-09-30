@@ -40,7 +40,7 @@ export class WPSError extends TaggedError<WPSError>()('WPSError', {
 const wsPromise = <T>(fn: Parameters<typeof Effect.tryPromise<T>>[0]) =>
   Effect.tryPromise({
     try: fn,
-    catch: (err) => WPSError.from(err),
+    catch: WPSError.from,
   }).pipe(Effect.catchAll(WPSError.from));
 
 const makeKey = (clientId: string, requestId: string) =>
