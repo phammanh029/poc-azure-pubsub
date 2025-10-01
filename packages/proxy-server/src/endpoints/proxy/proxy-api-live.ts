@@ -27,7 +27,9 @@ export const ProxyLive = HttpApiBuilder.group(Api, 'proxy', (handlers) =>
           connectionId,
           tenantId,
           {
-            headers: headers,
+            headers,
+            path: '/info',
+            method: 'GET',
           }
         );
         yield* Effect.log('Received response from client', clientResponse);

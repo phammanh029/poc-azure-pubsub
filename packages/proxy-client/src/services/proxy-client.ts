@@ -40,13 +40,14 @@ export class ProxyClient extends Effect.Service<ProxyClient>()('ProxyClient', {
         switch (decoded.right.data.op) {
           case 'request':
             return yield* proxyService.proxy(
+              decoded.right.replyTo,
               decoded.right.data,
               hubClient.sendToGroup
             );
           case 'challenge':
             const challengeResponse =
               yield* challengeService.respondToChallenge(
-                decoded.right.data.data
+                decoded.right.data
               );
             // send back to the server
             return yield* sendMessage(decoded.right.replyTo, challengeResponse);
@@ -56,6 +57,10 @@ export class ProxyClient extends Effect.Service<ProxyClient>()('ProxyClient', {
     hubClient.on('server-message', (msg) =>
       Effect.runPromise(serverMessageHandler(msg.message))
     );
+
+    hubClient.on('disconnected', (ev) => {
+      console.log('Disconnected from hub', ev);
+    });
 
     return {
       /**

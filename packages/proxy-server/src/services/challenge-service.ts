@@ -80,7 +80,7 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
                 // parse response
                 const challengeResponse = Schema.decodeUnknownEither(
                   ChallengeResponseType
-                )(data);
+                )(data.data);
                 if (Either.isLeft(challengeResponse)) {
                   connection.step = ChallengeSteps.FAILED;
                   yield* onFailed(connection, "invalid challenge response format");

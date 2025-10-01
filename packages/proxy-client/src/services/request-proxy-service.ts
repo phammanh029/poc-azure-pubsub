@@ -23,11 +23,6 @@ const ProxyRequestSchema = Schema.Struct({
   ),
 });
 
-const ProxyRequestMetaSchema = Schema.Struct({
-  replyTo: Schema.String,
-  data: Schema.Any,
-});
-
 /**
  * This contains the proxy function where it will call the rest api from external endpoints and then send it back to the azure web pubsub group
  */
@@ -38,23 +33,14 @@ export class RequestProxyService extends Effect.Service<RequestProxyService>()(
       // TODO: load the config the server and then proxy the request
       return {
         proxy: (
+          replyTo: string,
           input: unknown,
           messageSender: WebPubSubClient['sendToGroup']
         ) =>
           Effect.gen(function* () {
-            const messageInfo = Schema.decodeUnknownEither(ProxyRequestMetaSchema)(input);
-            if (isLeft(messageInfo)) {
-              yield* Effect.logWarning(
-                `Invalid proxy message received: ${JSON.stringify(
-                  input
-                )}, error: ${JSON.stringify(messageInfo.left)}`
-              );
-              return;
-            }
-            const groupMessage = messageInfo.right;
             // decode and validate the request
             const decoded =
-              Schema.decodeUnknownEither(ProxyRequestSchema)(groupMessage.data);
+              Schema.decodeUnknownEither(ProxyRequestSchema)(input);
             if (isLeft(decoded)) {
               yield* Effect.logWarning(
                 `Invalid proxy request received: ${JSON.stringify(
@@ -63,7 +49,7 @@ export class RequestProxyService extends Effect.Service<RequestProxyService>()(
               );
               // TODO: send back the error response
               messageSender(
-                groupMessage.replyTo,
+                replyTo,
                 {
                   status: 400,
                   body: { message: 'Invalid request' },
@@ -84,7 +70,7 @@ export class RequestProxyService extends Effect.Service<RequestProxyService>()(
               headers: { 'content-type': 'application/json' },
             };
             yield* Effect.promise(() =>
-              messageSender(groupMessage.replyTo, response, 'json', {
+              messageSender(replyTo, response, 'json', {
                 fireAndForget: true,
               })
             );

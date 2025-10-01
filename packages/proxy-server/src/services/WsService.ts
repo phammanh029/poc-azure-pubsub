@@ -70,7 +70,7 @@ export class WsService extends Effect.Service<WsService>()('WsService', {
       yield* ProxyConfigService;
     const wspClient = new WebPubSubServiceClient(
       pubsubConnectionString,
-      hubName
+      hubName,
     );
 
     const chat = (
@@ -121,7 +121,7 @@ export class WsService extends Effect.Service<WsService>()('WsService', {
         );
 
         yield* wsPromise(() => groupClient.start());
-        yield* wsPromise(() => groupClient.joinGroup(podName));
+        // yield* wsPromise(() => groupClient.joinGroup(podName));
         return {
           stop: () => Effect.sync(() => groupClient.stop()),
           send: reply,
@@ -169,6 +169,7 @@ export class WsService extends Effect.Service<WsService>()('WsService', {
           ) => resolveResponse(data.data);
 
           yield* chat(podName, onClientResponse);
+          yield* Effect.log('Pod listening to group ' + podName);
         }),
       auth: (clientId: string) =>
         Effect.gen(function* () {
