@@ -239,3 +239,7 @@ End-to-end flow:
 - Server picks pod name (respTarget=pod-N) and includes its pod-specific `serverEventsUrl` (built from `POD_IP`) in the payload.
 - Client forwards to Local API with `x-tenant-id: tenant-1` and posts `{ type:'message', requestId, status, data }` back to that `serverEventsUrl`.
 - The same pod correlates `requestId` and responds to the HTTP caller.
+
+# Troubleshooting
+
+https://learn.microsoft.com/en-us/azure/azure-web-pubsub/howto-troubleshoot-common-issues

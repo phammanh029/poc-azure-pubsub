@@ -1,5 +1,5 @@
 import { ServerDataMessage, WebPubSubClient } from "@azure/web-pubsub-client";
-import { Effect, Either, Schema } from "effect";
+import { Duration, Effect, Either, Schedule, Schema } from "effect";
 import { AuthService } from "./auth-service";
 import { RequestProxyService } from "./request-proxy-service";
 import { ProxyRequestDataSchema } from "../schema/schema";
@@ -26,7 +26,7 @@ export class ProxyClient extends Effect.Service<ProxyClient>()("ProxyClient", {
 
     const serverMessageHandler = (msg: ServerDataMessage) =>
       Effect.gen(function* () {
-        yield* Effect.logDebug(`Message received: ${JSON.stringify(msg.data)}`);
+        yield* Effect.log(`Message received: ${JSON.stringify(msg.data)}`);
         // decode and validate the request
         const decoded = Schema.decodeUnknownEither(ProxyRequestDataSchema)(
           msg.data
@@ -59,18 +59,18 @@ export class ProxyClient extends Effect.Service<ProxyClient>()("ProxyClient", {
     );
     hubClient.on("group-message", (msg) =>
       Effect.runSync(
-        Effect.logInfo(`Group message received: ${JSON.stringify(msg.message)}`)
+        Effect.log(`Group message received: ${JSON.stringify(msg.message)}`)
       )
     );
     hubClient.on("connected", (ev) =>
-      Effect.runSync(Effect.logInfo("Hub client connected", ev))
+      Effect.runSync(Effect.log("Hub client connected", ev))
     );
 
     hubClient.on("disconnected", (ev) =>
-      Effect.runSync(Effect.logInfo("Hub client disconnected", ev))
+      Effect.runSync(Effect.log("Hub client disconnected", ev))
     );
     hubClient.on("stopped", (ev) =>
-      Effect.runSync(Effect.logInfo("Hub client stopped", ev))
+      Effect.runSync(Effect.log("Hub client stopped", ev))
     );
 
     return {
@@ -78,11 +78,28 @@ export class ProxyClient extends Effect.Service<ProxyClient>()("ProxyClient", {
        * Start the service
        */
       start: (abortSignal?: AbortSignal) =>
-        Effect.tryPromise(() =>
-          hubClient.start({
-            abortSignal,
-          })
-        ),
+        Effect.gen(function* () {
+          yield* Effect.log("Starting proxy client...");
+          // fixed at 5 seconds, call the ping event
+          const pingTask = Effect.repeat(
+            Effect.gen(function* () {
+              yield* Effect.log("Sending ping...");
+              yield* Effect.tryPromise(() =>
+                hubClient.sendEvent("ping", "ping", "text", {
+                  fireAndForget: true,
+                })
+              );
+            }),
+            Schedule.spaced("5 seconds")
+          );
+          yield* Effect.fork(pingTask);
+
+          return yield* Effect.tryPromise(() =>
+            hubClient.start({
+              abortSignal,
+            })
+          );
+        }),
       /**
        * Stop the service
        */

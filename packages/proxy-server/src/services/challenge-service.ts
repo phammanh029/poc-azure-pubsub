@@ -7,9 +7,8 @@
  *
  * The challenge-response mechanism ensures that only authorized clients can connect to the server.
  */
-import { Effect, Either, Schema } from "effect";
-import { GroupMessageReplyFn, WsService } from "./WsService";
 import { GroupDataMessage } from "@azure/web-pubsub-client";
+import { Effect, Either, Schema } from "effect";
 import {
   ChallengeMessage,
   ChallengeResponseMessage,
@@ -18,6 +17,7 @@ import {
   jtlProduct,
 } from "../data/protocol";
 import { lowercaseUUID } from "../schema/uuid";
+import { GroupMessageReplyFn, WsService } from "./WsService";
 enum ChallengeSteps {
   INIT,
   SENT,
@@ -68,10 +68,14 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
               step: ChallengeSteps.INIT,
             };
             const challengeGroup = `challenge-${tenantId}`;
+
+            const { send, start, stop } = yield* wsService.chat(
+              challengeGroup,
+              connectionId
+            );
             // handle challenge response from client
             const challengeResponseHandler = (
-              data: GroupDataMessage,
-              reply: GroupMessageReplyFn
+              data: GroupDataMessage
             ) =>
               Effect.gen(function* () {
                 // TODO: validate the userId
@@ -96,7 +100,7 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
 
                 // TODO: handle the challenge response
                 connection.step = ChallengeSteps.VERIFIED;
-                yield* reply({
+                yield* send({
                   replyTo: challengeGroup,
                   data: {
                     op: "challenge-response",
@@ -105,13 +109,11 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
                   },
                 });
                 yield* onSucceed(connection);
+                // stop the group listener
+                yield* stop();
               });
 
-            const { send, stop } = yield* wsService.chat(
-              challengeGroup,
-              challengeResponseHandler,
-              connectionId
-            );
+            yield* start(challengeResponseHandler);
             const challengeRequest: ChallengeMessage = {
               op: "challenge",
               id: generateUUID(),
