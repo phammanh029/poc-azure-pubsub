@@ -1,10 +1,11 @@
-import { HttpApiBuilder } from "@effect/platform";
+import { HttpApiBuilder, HttpServerResponse } from "@effect/platform";
 import { Effect, Layer } from "effect";
 import { Api } from "../../api";
 import { ProxyConfigService } from "../../config/proxy-config";
 import { ChallengeService } from "../../services/challenge-service";
 import { ConnectionService } from "../../services/connection-service";
 import { EventProxyError } from "./events-api";
+import { NoContent } from "@effect/platform/HttpApiSchema";
 
 export const EventsLive = HttpApiBuilder.group(Api, "events", (handlers) =>
   Effect.gen(function* () {
@@ -83,17 +84,13 @@ export const EventsLive = HttpApiBuilder.group(Api, "events", (handlers) =>
             return {};
           }).pipe(Effect.catchAll(EventProxyError.fromError))
       )
-      .handle("options", (req) => {
-        console.log("Received options request", req);
-        return Effect.succeed({
-          headers: {
+      .handle("options", (req) =>
+        Effect.gen(function* () {
+          return HttpServerResponse.setHeaders({
             "WebHook-Allowed-Origin": "*",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "*",
-            Allow: "GET, POST, OPTIONS",
-          },
-        });
-      });
+          })(HttpServerResponse.empty());
+        })
+      );
   })
 ).pipe(
   Layer.provide([

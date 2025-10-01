@@ -1,11 +1,11 @@
-import { ServerDataMessage, WebPubSubClient } from '@azure/web-pubsub-client';
-import { Effect, Either, Schema } from 'effect';
-import { AuthService } from './auth-service';
-import { RequestProxyService } from './request-proxy-service';
-import { ProxyRequestDataSchema } from '../schema/schema';
-import { ChallengeService } from './challenge-service';
+import { ServerDataMessage, WebPubSubClient } from "@azure/web-pubsub-client";
+import { Effect, Either, Schema } from "effect";
+import { AuthService } from "./auth-service";
+import { RequestProxyService } from "./request-proxy-service";
+import { ProxyRequestDataSchema } from "../schema/schema";
+import { ChallengeService } from "./challenge-service";
 
-export class ProxyClient extends Effect.Service<ProxyClient>()('ProxyClient', {
+export class ProxyClient extends Effect.Service<ProxyClient>()("ProxyClient", {
   effect: Effect.gen(function* () {
     const authService = yield* AuthService;
     const proxyService = yield* RequestProxyService;
@@ -19,13 +19,15 @@ export class ProxyClient extends Effect.Service<ProxyClient>()('ProxyClient', {
 
     const sendMessage = (replyTo: string, data: any) =>
       Effect.tryPromise(() =>
-        hubClient.sendToGroup(replyTo, data, 'json', { fireAndForget: true })
+        hubClient.sendToGroup(replyTo, data, "json", { fireAndForget: true })
       ).pipe(
-        Effect.catchTag('UnknownException', (err) => Effect.logError(err))
+        Effect.catchTag("UnknownException", (err) => Effect.logError(err))
       );
 
     const serverMessageHandler = (msg: ServerDataMessage) =>
       Effect.gen(function* () {
+        yield* Effect.logDebug(`Message received: ${JSON.stringify(msg.data)}`);
+        // decode and validate the request
         const decoded = Schema.decodeUnknownEither(ProxyRequestDataSchema)(
           msg.data
         );
@@ -38,29 +40,38 @@ export class ProxyClient extends Effect.Service<ProxyClient>()('ProxyClient', {
           return;
         }
         switch (decoded.right.data.op) {
-          case 'request':
+          case "request":
             return yield* proxyService.proxy(
               decoded.right.replyTo,
               decoded.right.data,
               hubClient.sendToGroup
             );
-          case 'challenge':
+          case "challenge":
             const challengeResponse =
-              yield* challengeService.respondToChallenge(
-                decoded.right.data
-              );
+              yield* challengeService.respondToChallenge(decoded.right.data);
             // send back to the server
             return yield* sendMessage(decoded.right.replyTo, challengeResponse);
         }
       });
 
-    hubClient.on('server-message', (msg) =>
-      Effect.runPromise(serverMessageHandler(msg.message))
+    hubClient.on("server-message", (msg) =>
+      Effect.runSync(serverMessageHandler(msg.message))
+    );
+    hubClient.on("group-message", (msg) =>
+      Effect.runSync(
+        Effect.logInfo(`Group message received: ${JSON.stringify(msg.message)}`)
+      )
+    );
+    hubClient.on("connected", (ev) =>
+      Effect.runSync(Effect.logInfo("Hub client connected", ev))
     );
 
-    hubClient.on('disconnected', (ev) => {
-      console.log('Disconnected from hub', ev);
-    });
+    hubClient.on("disconnected", (ev) =>
+      Effect.runSync(Effect.logInfo("Hub client disconnected", ev))
+    );
+    hubClient.on("stopped", (ev) =>
+      Effect.runSync(Effect.logInfo("Hub client stopped", ev))
+    );
 
     return {
       /**

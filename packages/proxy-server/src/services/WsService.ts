@@ -99,6 +99,7 @@ export class WsService extends Effect.Service<WsService>()('WsService', {
         );
         const groupClient = new WebPubSubClient(groupAccessToken.url, {
           autoReconnect: true,
+          autoRejoinGroups: true,
         });
 
         const reply = (message: any) =>

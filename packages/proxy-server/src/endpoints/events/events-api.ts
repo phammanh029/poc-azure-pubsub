@@ -1,11 +1,17 @@
-import { HttpApiEndpoint, HttpApiGroup, HttpMiddleware } from '@effect/platform';
-import { Effect, Schema } from 'effect';
-import { TaggedError } from 'effect/Schema';
-import { lowercaseUUID } from '../../schema/uuid';
+import {
+  HttpApiEndpoint,
+  HttpApiGroup,
+  HttpApiMiddleware,
+  HttpServerResponse,
+} from "@effect/platform";
+import { Schema } from "effect";
+import { TaggedError } from "effect/Schema";
+import { lowercaseUUID } from "../../schema/uuid";
+import { Accepted, Empty, NoContent } from "@effect/platform/HttpApiSchema";
 
 export class EventProxyError extends TaggedError<EventProxyError>(
-  'EventProxyError'
-)('EventProxyError', {
+  "EventProxyError"
+)("EventProxyError", {
   message: Schema.String,
 }) {
   static fromError(error: unknown) {
@@ -17,48 +23,40 @@ export class EventProxyError extends TaggedError<EventProxyError>(
 }
 
 class EventProxyRequest extends Schema.Class<EventProxyRequest>(
-  'EventProxyRequest'
+  "EventProxyRequest"
 )({
-  'webhook-request-origin': Schema.String,
-}) {}
-
-export class EventProxyOptionResponse extends Schema.Class<EventProxyOptionResponse>(
-  'EventProxyOptionResponse'
-)({
-  headers: Schema.Struct({
-    'WebHook-Allowed-Origin': Schema.String,
-  }),
+  "webhook-request-origin": Schema.String,
 }) {}
 
 export class EventProxyResponse extends Schema.Class<EventProxyResponse>(
-  'EventProxyResponse'
+  "EventProxyResponse"
 )({}) {}
 
 class EventProxySystemEvent extends Schema.Class<EventProxySystemEvent>(
-  'EventProxySystemEvent'
+  "EventProxySystemEvent"
 )({
-  'ce-time': Schema.String,
-  'ce-connectionid': Schema.String,
-  'ce-eventname': Schema.Union(
-    Schema.Literal('connected'),
-    Schema.Literal('disconnected')
+  "ce-time": Schema.String,
+  "ce-connectionid": Schema.String,
+  "ce-eventname": Schema.Union(
+    Schema.Literal("connected"),
+    Schema.Literal("disconnected")
   ),
-  'ce-userid': lowercaseUUID,
+  "ce-userid": lowercaseUUID,
 }) {}
 
-export class EventHttpApiGroup extends HttpApiGroup.make('events', {
+export class EventHttpApiGroup extends HttpApiGroup.make("events", {
   topLevel: true,
 })
   .add(
-    HttpApiEndpoint.post('post', '/events')
+    HttpApiEndpoint.post("post", "/events")
       .addError(EventProxyError)
       .setHeaders(EventProxySystemEvent)
       .addSuccess(EventProxyResponse)
   )
   .add(
-    HttpApiEndpoint.options('options', '/events')
+    HttpApiEndpoint.options("options", "/events")
       .addError(EventProxyError)
       // validate the headers
       .setHeaders(EventProxyRequest)
-      .addSuccess(EventProxyOptionResponse, { status: 200 })
+      .addSuccess(Empty(200))
   ) {}
