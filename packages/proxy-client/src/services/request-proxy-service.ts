@@ -1,27 +1,6 @@
-import { Effect, Schema } from 'effect';
+import { Effect } from 'effect';
 import type { WebPubSubClient } from '@azure/web-pubsub-client';
-import { isLeft } from 'effect/Either';
 import { SchemaRequestSchema } from '../schema/schema';
-
-const ProxyRequestSchema = Schema.Struct({
-  requestId: Schema.String,
-  op: Schema.Literal('request'),
-  data: Schema.Struct({
-    method: Schema.Union(
-      Schema.Literal('GET'),
-      Schema.Literal('POST'),
-      Schema.Literal('PUT'),
-      Schema.Literal('DELETE')
-    ),
-    path: Schema.String,
-    headers: Schema.Record({
-      key: Schema.String,
-      value: Schema.String,
-    }),
-    query: Schema.optional(Schema.String),
-    body: Schema.optional(Schema.Any),
-  }),
-});
 
 /**
  * This contains the proxy function where it will call the rest api from external endpoints and then send it back to the azure web pubsub group

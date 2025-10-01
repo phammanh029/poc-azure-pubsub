@@ -38,6 +38,7 @@ class EventProxySystemEvent extends Schema.Class<EventProxySystemEvent>(
   "ce-time": Schema.String,
   "ce-connectionid": Schema.String,
   "ce-eventname": Schema.Union(
+    Schema.Literal("connect"),
     Schema.Literal("connected"),
     Schema.Literal("disconnected")
   ),
