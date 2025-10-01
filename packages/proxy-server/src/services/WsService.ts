@@ -1,8 +1,9 @@
-import { WebPubSubServiceClient } from "@azure/web-pubsub";
-import { GroupDataMessage, WebPubSubClient } from "@azure/web-pubsub-client";
-import { Effect, Either, Schema } from "effect";
-import { TaggedError } from "effect/Schema";
-import { ProxyConfigService } from "../config/proxy-config";
+import { WebPubSubServiceClient } from '@azure/web-pubsub';
+import { GroupDataMessage, WebPubSubClient } from '@azure/web-pubsub-client';
+import { Effect, Either, Schema } from 'effect';
+import { TaggedError } from 'effect/Schema';
+import { ProxyConfigService } from '../config/proxy-config';
+import { RequestMessage } from '../data/protocol';
 
 const SuccessResponseSchema = Schema.Struct({
   data: Schema.Any,
@@ -18,7 +19,7 @@ const ClientResponseSchema = Schema.Struct({
 });
 
 type ClientResponseData = Schema.Schema.Type<typeof ClientResponseSchema>;
-type ClientResponseDataPayload = ClientResponseData["payload"];
+type ClientResponseDataPayload = ClientResponseData['payload'];
 
 const ClientProxyRequestSchema = Schema.Struct({
   replyTo: Schema.String,
@@ -28,7 +29,7 @@ export type ClientProxyRequestSchema = Schema.Schema.Type<
   typeof ClientProxyRequestSchema
 >;
 
-export class WPSError extends TaggedError<WPSError>()("WPSError", {
+export class WPSError extends TaggedError<WPSError>()('WPSError', {
   message: Schema.optional(Schema.String),
 }) {
   static from(err: unknown) {
@@ -43,8 +44,6 @@ const wsPromise = <T>(fn: Parameters<typeof Effect.tryPromise<T>>[0]) =>
     catch: WPSError.from,
   }).pipe(Effect.catchAll(WPSError.from));
 
-const makeKey = (clientId: string, requestId: string) =>
-  `${clientId}:${requestId}`;
 // in-memory pending request store
 type PendingResolver = {
   resolve: (data: ClientResponseDataPayload) => void;
@@ -63,11 +62,11 @@ export type wsResponseFunction = (
   reply: GroupMessageReplyFn
 ) => Effect.Effect<void, never, never>;
 
-export class WsService extends Effect.Service<WsService>()("WsService", {
+export class WsService extends Effect.Service<WsService>()('WsService', {
   effect: Effect.gen(function* () {
-    yield* Effect.log("Initializing WsService");
     const { hubName, pubsubConnectionString, podName, requestTimeoutMs } =
       yield* ProxyConfigService;
+    yield* Effect.log('Initializing WsService', podName);
     const wspClient = new WebPubSubServiceClient(
       pubsubConnectionString,
       hubName
@@ -75,6 +74,7 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
 
     const chat = (groupName: string, connectionId?: string) =>
       Effect.gen(function* () {
+        yield* Effect.log('Initializing chat for group', groupName);
         // get the access to the group
         const groupAccessToken = yield* wsPromise(() =>
           wspClient.getClientAccessToken({
@@ -116,7 +116,7 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
           ) =>
             Effect.gen(function* () {
               // re-register the handler
-              groupClient.on("group-message", (msg) =>
+              groupClient.on('group-message', (msg) =>
                 Effect.runPromise(onReceived(msg.message))
               );
               yield* wsPromise(() => groupClient.start());
@@ -149,14 +149,13 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
                 return;
               }
               const { requestId, payload } = decoded.right;
-              const key = makeKey(podName, requestId);
-              const resolver = pendingRequests.get(key);
+              const resolver = pendingRequests.get(requestId);
               if (resolver) {
                 resolver.resolve(payload);
                 clearTimeout(resolver.timeoutId);
-                pendingRequests.delete(key);
+                pendingRequests.delete(requestId);
               } else {
-                yield* Effect.logWarning("No pending resolver for", key);
+                yield* Effect.logWarning('No pending resolver for', requestId);
               }
             });
 
@@ -165,17 +164,15 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
 
           const { start } = yield* chat(podName);
           yield* start(onClientResponse);
-          yield* Effect.log("Pod listening to group " + podName);
+          yield* Effect.log('Pod listening to group ' + podName);
         }),
       auth: (clientId: string) =>
         Effect.gen(function* () {
           const token = yield* wsPromise(() =>
             wspClient.getClientAccessToken({
-              roles: ["webpubsub.sendToGroup"],
+              roles: ['webpubsub.sendToGroup'],
               userId: clientId,
-              // will be expiring in 4 minutes
-              // TODO:: increase this if needed
-              expirationTimeInMinutes: 4,
+              expirationTimeInMinutes: 60,
             })
           );
           return {
@@ -188,23 +185,21 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
       // send message to client
       sendToClient: (
         connectionId: string,
-        userId: string,
-        message: any,
+        message: RequestMessage,
         abortSignal?: AbortSignal
       ) =>
         Effect.async<ClientResponseDataPayload, WPSError>((resume) => {
-          const requestId = crypto.randomUUID();
-          const key = makeKey(userId, requestId);
+          const requestId = message.id;
           // make sure the request will timeout after certain time
           const timeoutId = setTimeout(() => {
-            const resolver = pendingRequests.get(key);
+            const resolver = pendingRequests.get(requestId);
             if (resolver) {
               resolver.reject(
                 new WPSError({
                   message: `Request ${requestId} timed out after ${requestTimeoutMs}ms`,
                 })
               );
-              pendingRequests.delete(key);
+              pendingRequests.delete(requestId);
             }
           }, requestTimeoutMs);
 
@@ -214,7 +209,7 @@ export class WsService extends Effect.Service<WsService>()("WsService", {
             reject: (err: WPSError) => resume(Effect.fail(err)),
             timeoutId,
           };
-          pendingRequests.set(key, resolver);
+          pendingRequests.set(requestId, resolver);
 
           wspClient
             .sendToConnection(

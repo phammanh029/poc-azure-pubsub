@@ -17,7 +17,7 @@ import {
   jtlProduct,
 } from "../data/protocol";
 import { lowercaseUUID } from "../schema/uuid";
-import { GroupMessageReplyFn, WsService } from "./WsService";
+import { WsService } from "./WsService";
 enum ChallengeSteps {
   INIT,
   SENT,
@@ -134,6 +134,6 @@ export class ChallengeService extends Effect.Service<ChallengeService>()(
           }),
       };
     }),
-    dependencies: [WsService.Default],
+    // WsService should be provided at the application layer to ensure a single cached instance.
   }
 ) {}

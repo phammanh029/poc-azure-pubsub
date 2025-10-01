@@ -14,4 +14,4 @@ export const AuthApiLive = HttpApiBuilder.group(Api, 'auth', (handlers) =>
         .pipe(Effect.mapError(AuthApiErrorResponse.fromWsError))
     );
   })
-).pipe(Layer.provide(WsService.Default));
+);

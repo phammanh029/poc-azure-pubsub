@@ -41,7 +41,6 @@ export const ProxyLive = HttpApiBuilder.group(Api, "proxy", (handlers) =>
         // send the message to the connection
         const clientResponse = yield* wsService.sendToClient(
           connectionId,
-          tenantId,
           requestData
         );
         yield* Effect.log("Received response from client", clientResponse);
@@ -54,4 +53,4 @@ export const ProxyLive = HttpApiBuilder.group(Api, "proxy", (handlers) =>
       })
     );
   })
-).pipe(Layer.provide([ConnectionService.Default, WsService.Default]));
+).pipe(Layer.provide([ConnectionService.Default]));

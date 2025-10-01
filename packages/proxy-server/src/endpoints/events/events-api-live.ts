@@ -74,7 +74,8 @@ export const EventsLive = HttpApiBuilder.group(Api, "events", (handlers) =>
               );
               break;
             case "disconnected":
-              yield* connectionService.removeConnection(userId);
+              // TODO: enable this once we found the issue with client disconnected
+              // yield* connectionService.removeConnection(userId);
               break;
           }
           // on connected, add to the storage

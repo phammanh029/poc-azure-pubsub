@@ -1,5 +1,5 @@
 import { ServerDataMessage, WebPubSubClient } from "@azure/web-pubsub-client";
-import { Duration, Effect, Either, Schedule, Schema } from "effect";
+import { Effect, Either, Schedule, Schema } from "effect";
 import { AuthService } from "./auth-service";
 import { RequestProxyService } from "./request-proxy-service";
 import { ProxyRequestDataSchema } from "../schema/schema";
@@ -44,7 +44,7 @@ export class ProxyClient extends Effect.Service<ProxyClient>()("ProxyClient", {
             return yield* proxyService.proxy(
               decoded.right.replyTo,
               decoded.right.data,
-              hubClient.sendToGroup
+              hubClient.sendToGroup.bind(hubClient)
             );
           case "challenge":
             const challengeResponse =
