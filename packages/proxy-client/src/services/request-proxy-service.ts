@@ -9,7 +9,6 @@ export class RequestProxyService extends Effect.Service<RequestProxyService>()(
   'RequestProxyService',
   {
     effect: Effect.gen(function* () {
-      // TODO: load the config the server and then proxy the request
       return {
         proxy: (
           replyTo: string,

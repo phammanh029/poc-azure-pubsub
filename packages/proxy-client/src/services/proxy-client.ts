@@ -1,9 +1,9 @@
 import { ServerDataMessage, WebPubSubClient } from "@azure/web-pubsub-client";
 import { Effect, Either, Schedule, Schema } from "effect";
-import { AuthService } from "./auth-service";
-import { RequestProxyService } from "./request-proxy-service";
 import { ProxyRequestDataSchema } from "../schema/schema";
+import { AuthService } from "./auth-service";
 import { ChallengeService } from "./challenge-service";
+import { RequestProxyService } from "./request-proxy-service";
 
 export class ProxyClient extends Effect.Service<ProxyClient>()("ProxyClient", {
   effect: Effect.gen(function* () {

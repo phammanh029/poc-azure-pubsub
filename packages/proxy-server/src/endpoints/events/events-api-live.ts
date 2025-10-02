@@ -19,7 +19,7 @@ export const EventsLive = HttpApiBuilder.group(Api, "events", (handlers) =>
             "ce-userid": userId,
             "ce-connectionid": connectionId,
           } = headers;
-          if (userId === podName) return {};
+          if (userId === podName) return;
 
           yield* Effect.log(
             "Received post request",
@@ -78,8 +78,6 @@ export const EventsLive = HttpApiBuilder.group(Api, "events", (handlers) =>
               // yield* connectionService.removeConnection(userId);
               break;
           }
-          // on connected, add to the storage
-          return {};
         }).pipe(Effect.catchAll(EventProxyError.fromError))
       )
       .handle("options", (req) =>

@@ -28,10 +28,6 @@ class EventProxyRequest extends Schema.Class<EventProxyRequest>(
   "webhook-request-origin": Schema.String,
 }) {}
 
-export class EventProxyResponse extends Schema.Class<EventProxyResponse>(
-  "EventProxyResponse"
-)({}) {}
-
 class EventProxySystemEvent extends Schema.Class<EventProxySystemEvent>(
   "EventProxySystemEvent"
 )({
@@ -52,7 +48,7 @@ export class EventHttpApiGroup extends HttpApiGroup.make("events", {
     HttpApiEndpoint.post("post", "/events")
       .addError(EventProxyError)
       .setHeaders(EventProxySystemEvent)
-      .addSuccess(EventProxyResponse)
+      .addSuccess(Empty(200))
   )
   .add(
     HttpApiEndpoint.options("options", "/events")

@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json ./
 
 # Install dependencies for all workspaces with Bun (supports workspaces)
-RUN bun install --silent
+RUN bun install --silent -p
 
 ENV NODE_ENV=production
 ENV PORT=3000
