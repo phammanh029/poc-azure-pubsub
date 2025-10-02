@@ -5,7 +5,8 @@ metadata:
   labels:
     app: proxy-server
 spec:
-  replicas: 2
+  # TODO: manual scale after update the secret
+  replicas: 1
   selector:
     matchLabels:
       app: proxy-server
@@ -20,17 +21,26 @@ spec:
           image: demo-proxy-azure-pubsub-proxy-server:local
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8080
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: 8m
+              memory: 256Mi
+            limits:
+              cpu: 10m
+              memory: 512Mi
           env:
             - name: PORT
-              value: "8080"
+              value: "3000"
+            - name: REDIS_URL
+              value: "redis://valkey:6379"
             - name: PUBSUB_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
                   name: pubsub-secret
                   key: connectionString
-          # If your image contains source + package.json, use npm start
-          # command: ["npm", "start"]
+            - name: HUB_NAME
+              value: "wawi"
 ---
 apiVersion: v1
 kind: Service
@@ -44,5 +54,32 @@ spec:
     app: proxy-server
   ports:
     - name: http
-      port: 8080
-      targetPort: 8080
+      port: 80
+      targetPort: 3000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: proxy-server
+  labels:
+    app: proxy-server
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: proxy-server
+  minReplicas: 1
+  maxReplicas: 15
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+  behavior:
+    scaleUp:
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60

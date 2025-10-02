@@ -1,0 +1,14 @@
+node_modules/
+dist
+.vscode/
+.bun/
+.buninstall/
+.bun-cache/
+.bun-plugins/
+.bun-types/
+.bun-global/
+.DS_Store
+*.log
+*.tsbuildinfo
+.env*
+readme.md

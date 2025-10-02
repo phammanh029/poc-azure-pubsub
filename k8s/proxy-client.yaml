@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxy-client
+  labels:
+    app: proxy-client
+spec:
+  # TODO: manual scale after update the secret
+  replicas: 0
+  selector:
+    matchLabels:
+      app: proxy-client
+  template:
+    metadata:
+      labels:
+        app: proxy-client
+    spec:
+      containers:
+        - name: proxy-client
+          image: demo-proxy-azure-pubsub-proxy-client:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AUTH_URL
+              value: http://proxy-server.default.svc.cluster.local/auth
