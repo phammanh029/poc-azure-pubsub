@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package.json ./
 COPY . .
 
-RUN bun install --silent
+RUN bun install --silent -p
 
 ENV NODE_ENV=production
 
