@@ -5,7 +5,8 @@ metadata:
   labels:
     app: proxy-client
 spec:
-  replicas: 3
+  # TODO: manual scale after update the secret
+  replicas: 0
   selector:
     matchLabels:
       app: proxy-client
