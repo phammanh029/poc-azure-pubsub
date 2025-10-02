@@ -93,7 +93,7 @@ Invoke the client’s local API through the proxy:
 
 ```bash
 curl -sS -X POST \
-  "http://localhost:8080/invoke?clientId=client-a&path=/hello" \
+  "http://localhost:3000/invoke?clientId=client-a&path=/hello" \
   -H 'content-type: application/json' \
   -d '{}'
 ```
@@ -149,9 +149,8 @@ docker compose up --build
 
 What it starts:
 - `valkey`: key-value store on `6379`.
-- `proxy-server`: listens on `8080` with `READY_STORE=redis`.
-- `local-api`: simple API for the client (port 3000, internal).
-- `proxy-client`: uses `/auth` and `/init` (no connection string needed), `CLIENT_ID=client-a`.
+- `proxy-server`: listens on `3000` and uses Valkey via `REDIS_URL`.
+- `proxy-client`: uses `/auth` (no connection string needed); echoes requests.
 
 Test after startup:
 
@@ -226,7 +225,7 @@ Deployed:
 3) Port-forward to a server service
 
 ```
-kubectl port-forward svc/proxy-server 8080:8080
+kubectl port-forward svc/proxy-server 3000:3000
 ```
 
 4) Simulate ERP request (random server pod behind service)
