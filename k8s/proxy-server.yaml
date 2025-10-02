@@ -6,7 +6,7 @@ metadata:
     app: proxy-server
 spec:
   # TODO: manual scale after update the secret
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: proxy-server
@@ -22,6 +22,13 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
+          resources:
+            requests:
+              cpu: 8m
+              memory: 256Mi
+            limits:
+              cpu: 10m
+              memory: 512Mi
           env:
             - name: PORT
               value: "3000"
@@ -47,5 +54,32 @@ spec:
     app: proxy-server
   ports:
     - name: http
-      port: 3000
+      port: 80
       targetPort: 3000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: proxy-server
+  labels:
+    app: proxy-server
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: proxy-server
+  minReplicas: 1
+  maxReplicas: 15
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+  behavior:
+    scaleUp:
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60

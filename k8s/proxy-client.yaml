@@ -21,4 +21,4 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: AUTH_URL
-              value: http://proxy-server:3000/auth
+              value: http://proxy-server.default.svc.cluster.local/auth
